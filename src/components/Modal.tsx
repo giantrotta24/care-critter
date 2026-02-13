@@ -12,6 +12,11 @@ interface ModalProps {
 export function Modal({ open, title, children, onClose, className }: ModalProps): JSX.Element | null {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -31,7 +36,7 @@ export function Modal({ open, title, children, onClose, className }: ModalProps)
 
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -71,7 +76,7 @@ export function Modal({ open, title, children, onClose, className }: ModalProps)
       window.removeEventListener('keydown', onKeyDown);
       lastFocusedRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) {
     return null;
@@ -85,14 +90,19 @@ export function Modal({ open, title, children, onClose, className }: ModalProps)
       aria-label={title}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) {
-          onClose();
+          onCloseRef.current();
         }
       }}
     >
       <div className={`modal-card ${className ?? ''}`} ref={cardRef} tabIndex={-1}>
         <div className="modal-header">
           <h2>{title}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => onCloseRef.current()}
+            aria-label="Close"
+          >
             Close
           </button>
         </div>
