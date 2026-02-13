@@ -284,7 +284,7 @@ export default function App(): JSX.Element {
     if (playRound && playSecondsLeft <= 0) {
       dispatch({ type: 'applyAction', actionType: 'playLoss', nowTs: Date.now() });
       setPlayRound(null);
-      setToast('Play round timed out. Nice try!');
+      setToast('Time is up. Great try!');
     }
   }, [playRound, playSecondsLeft]);
 
@@ -292,7 +292,7 @@ export default function App(): JSX.Element {
     if (learnRound && learnSecondsLeft <= 0) {
       dispatch({ type: 'applyAction', actionType: 'learnWrong', nowTs: Date.now() });
       setLearnRound(null);
-      setToast('Learning round timed out. Keep practicing!');
+      setToast('Time is up. Let us try another letter!');
     }
   }, [learnRound, learnSecondsLeft]);
 
@@ -574,7 +574,7 @@ export default function App(): JSX.Element {
       nowTs: Date.now()
     });
     setLearnRound(null);
-    showMessage(correct ? 'Great learning!' : 'Good try, keep practicing.');
+    showMessage(correct ? 'You did it. Great learning!' : 'Almost! Try again.');
   };
 
   const chooseEggStyle = (eggStyle: EggStyle): void => {
@@ -675,6 +675,7 @@ export default function App(): JSX.Element {
                 <span style={{ width: `${parentHoldProgress}%` }} />
               </span>
             </button>
+            <span className="parent-lock-note">Grown-ups</span>
 
             <div className="habitat-hud">
               <div className="hud-chip-row">
@@ -839,7 +840,7 @@ export default function App(): JSX.Element {
           {state.settings.confirmMode === 'parent' ? (
             <HoldToConfirmButton
               label="Hold to finish"
-              helperText="Keep holding for 2 seconds"
+              helperText="Grown-up holds for 2 seconds"
               onConfirm={resolveMirrorDone}
             />
           ) : (
