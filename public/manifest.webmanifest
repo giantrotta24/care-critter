@@ -1,0 +1,22 @@
+{
+  "name": "Care Critter",
+  "short_name": "Critter",
+  "description": "A Tamagotchi-style habit mirror pet for kids.",
+  "theme_color": "#2d8472",
+  "background_color": "#f4f8ef",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

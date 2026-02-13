@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Care Critter icon maskable">
+  <rect width="512" height="512" fill="#1d4b55" />
+  <circle cx="256" cy="256" r="180" fill="#6fd19b" />
+  <circle cx="256" cy="274" r="120" fill="#f7f0d8" />
+  <circle cx="216" cy="246" r="12" fill="#2d2a32" />
+  <circle cx="296" cy="246" r="12" fill="#2d2a32" />
+  <path d="M218 308c20 20 56 20 76 0" fill="none" stroke="#2d2a32" stroke-width="14" stroke-linecap="round" />
+</svg>
