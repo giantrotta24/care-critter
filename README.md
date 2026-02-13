@@ -12,21 +12,38 @@ A mobile-first Tamagotchi-style virtual pet built with React + TypeScript + Vite
 
 ## Features
 
-- Single-screen mobile UI with no required scrolling on common phone sizes
+- Mobile-first habitat layout:
+  - Large framed “critter habitat” area (primary focus)
+  - Compact top HUD meters (Hunger, Happiness, Training)
+  - Fixed bottom action dock (Feed, Play, Learn, Sleep, Status)
+  - Status shown in a sheet (Age, Weight, Poop + secondary care actions)
+- Retro Tamagotchi-inspired visual style:
+  - Pixel-style borders, bezel/screen framing, compact bars
+  - Day/night habitat background accents
+  - Lightweight egg/critter sprite visuals with variant lineage
 - Pet lifecycle: `Egg -> Baby -> Child -> Teen -> Adult`
 - Main meters: Hunger, Happiness, Training
-- Primary actions: Feed (Meal/Snack), Play minigame, Learn minigame, Sleep
-- Mirror prompt gating before rewards (for Play/Learn, prompt runs before the minigame)
-- Parent Mode (hidden 2-second hold + math gate)
+- Primary actions: Feed (Meal/Snack), Play minigame, Learn minigame, Sleep/Wake
+- Mirror prompt gating before rewards with toddler-friendly visual cues:
+  - Per-action icon + short prompt text
+  - Hold-to-confirm ring progress (2s hold)
+- Parent Mode access:
+  - Visible lock button in habitat bezel
+  - Long-press 2 seconds + math gate
+  - One-time grown-up hint overlay for discoverability
 - Parent settings:
   - Mirror on/off
   - Confirm mode + timer
-  - Per-action prompt text
+  - Per-action prompt text + prompt icon
   - Pause decay
   - Sleep window
   - Sleep override
-  - Reset game
+  - Hatch early (advance stage immediately)
+  - Restart pet (returns to egg selection)
   - Export/import JSON backup
+- First-run egg selection (also shown after restart):
+  - Choose from `speckled | striped | star | leaf`
+  - Selection sets `eggStyle` and critter lineage via `critterVariant`
 - Secondary care:
   - Poop accumulation + clean action
   - Sickness model + medicine cure (1-2 steps)
@@ -88,6 +105,8 @@ Persistence lives in `src/game/storage.ts`:
 
 - `loadState(adapter?, nowTs?)`
 - `saveState(state, adapter?)`
+
+State includes local-only egg lineage fields (`eggStyle`, `critterVariant`) and these are included in export/import JSON.
 
 All tunable constants are centralized in `src/game/constants.ts`.
 

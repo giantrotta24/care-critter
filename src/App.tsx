@@ -1,18 +1,32 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { HoldToConfirmButton } from './components/HoldToConfirmButton';
-import { Meter } from './components/Meter';
 import { Modal } from './components/Modal';
-import { CAPS, GAME_LOOP } from './game/constants';
+import {
+  CAPS,
+  DEFAULT_PROMPT_ICONS,
+  EGG_STYLES,
+  GAME_LOOP,
+  PARENT_HINT_KEY
+} from './game/constants';
 import { applyTimeDecay } from './game/engine';
 import { gameReducer } from './game/reducer';
-import { loadState, saveState } from './game/storage';
+import { loadState, saveState, type StorageAdapter } from './game/storage';
 import { canSleepNow, toIsoDate } from './game/time';
-import type { ActionType, GameState, ParentSettings } from './game/types';
+import type {
+  ActionType,
+  CritterVariant,
+  EggStyle,
+  GameState,
+  MirrorActionKey,
+  ParentSettings,
+  PromptIconKey
+} from './game/types';
 
-const TAB_ORDER = ['feed', 'play', 'learn', 'sleep', 'status'] as const;
-type Tab = (typeof TAB_ORDER)[number];
 type Intent = 'feedMeal' | 'feedSnack' | 'play' | 'learn' | 'sleep';
 type Side = 'left' | 'right';
+type DockAction = 'feed' | 'play' | 'learn' | 'sleep' | 'status';
+type ConfirmAction = 'restart' | 'hatchEarly' | null;
+type DockIcon = PromptIconKey | 'status' | 'lock';
 
 interface ParentChallenge {
   a: number;
@@ -30,6 +44,47 @@ interface PlayRound {
   expiresAt: number;
 }
 
+const PROMPT_KEY_BY_INTENT: Record<Intent, MirrorActionKey> = {
+  feedMeal: 'feedMeal',
+  feedSnack: 'feedSnack',
+  play: 'play',
+  learn: 'learn',
+  sleep: 'sleep'
+};
+
+const PROMPT_ROWS: Array<{ key: MirrorActionKey; label: string }> = [
+  { key: 'feedMeal', label: 'Feed meal' },
+  { key: 'feedSnack', label: 'Feed snack' },
+  { key: 'play', label: 'Play' },
+  { key: 'learn', label: 'Learn' },
+  { key: 'sleep', label: 'Sleep' }
+];
+
+const PROMPT_ICON_OPTIONS: PromptIconKey[] = ['meal', 'snack', 'play', 'learn', 'sleep'];
+
+const EGG_META: Record<EggStyle, { name: string; blurb: string; variant: string }> = {
+  speckled: {
+    name: 'Speckled Egg',
+    blurb: 'Warm and sunny friend',
+    variant: 'Sunny'
+  },
+  striped: {
+    name: 'Striped Egg',
+    blurb: 'Bold and playful friend',
+    variant: 'Stripe'
+  },
+  star: {
+    name: 'Star Egg',
+    blurb: 'Dreamy space friend',
+    variant: 'Astro'
+  },
+  leaf: {
+    name: 'Leaf Egg',
+    blurb: 'Calm nature friend',
+    variant: 'Forest'
+  }
+};
+
 function initGameState(): GameState {
   const nowTs = Date.now();
   const loaded = loadState(undefined, nowTs);
@@ -39,44 +94,18 @@ function initGameState(): GameState {
   return hydrated;
 }
 
-function stageEmoji(state: GameState): string {
-  if (state.dead) {
-    return '🕊️';
-  }
-
-  if (state.stage === 'egg') {
-    return '🥚';
-  }
-
-  if (state.stage === 'baby') {
-    return state.sickness ? '🤒' : '🐣';
-  }
-
-  if (state.stage === 'child') {
-    return state.sickness ? '🤒' : '🐥';
-  }
-
-  if (state.stage === 'teen') {
-    return state.sickness ? '🤒' : '🐱';
-  }
-
-  if (state.adultVariant === 'A') {
-    return state.sickness ? '🤒' : '🦊';
-  }
-
-  if (state.adultVariant === 'B') {
-    return state.sickness ? '🤒' : '🐶';
-  }
-
-  return state.sickness ? '🤒' : '🐼';
-}
-
 function stageLabel(state: GameState): string {
-  const core = state.stage[0].toUpperCase() + state.stage.slice(1);
+  const stageCore = state.stage[0].toUpperCase() + state.stage.slice(1);
+
   if (state.stage === 'adult') {
-    return `${core} (${state.adultVariant})`;
+    return `${stageCore} ${state.adultVariant}`;
   }
-  return core;
+
+  if (state.stage === 'egg' && state.eggStyle) {
+    return `${stageCore} (${EGG_META[state.eggStyle].name})`;
+  }
+
+  return stageCore;
 }
 
 function randomSide(): Side {
@@ -100,29 +129,90 @@ function makeLearnRound(): LearnRound {
   };
 }
 
+function isNight(clockTs: number): boolean {
+  const hour = new Date(clockTs).getHours();
+  return hour >= 19 || hour < 6;
+}
+
+function defaultPromptIconForIntent(intent: Intent): PromptIconKey {
+  return DEFAULT_PROMPT_ICONS[PROMPT_KEY_BY_INTENT[intent]];
+}
+
+function getConfirmTitle(confirmAction: ConfirmAction): string {
+  if (confirmAction === 'restart') {
+    return 'Restart Pet?';
+  }
+
+  if (confirmAction === 'hatchEarly') {
+    return 'Hatch Early?';
+  }
+
+  return '';
+}
+
+function getConfirmBody(confirmAction: ConfirmAction): string {
+  if (confirmAction === 'restart') {
+    return 'This clears the current pet and returns to egg selection.';
+  }
+
+  return 'This moves your pet to the next stage immediately.';
+}
+
 export default function App(): JSX.Element {
   const [state, dispatch] = useReducer(gameReducer, undefined, initGameState);
   const stateRef = useRef(state);
 
-  const [activeTab, setActiveTab] = useState<Tab>('feed');
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null);
-  const [toast, setToast] = useState<string>('');
+  const [showFeedSheet, setShowFeedSheet] = useState(false);
+  const [showStatusSheet, setShowStatusSheet] = useState(false);
+  const [toast, setToast] = useState('');
 
   const [playRound, setPlayRound] = useState<PlayRound | null>(null);
   const [learnRound, setLearnRound] = useState<LearnRound | null>(null);
 
   const [parentHoldActive, setParentHoldActive] = useState(false);
+  const [parentHoldProgress, setParentHoldProgress] = useState(0);
   const parentGateTimerRef = useRef<number | null>(null);
+  const parentGateIntervalRef = useRef<number | null>(null);
+  const parentHoldStartedAtRef = useRef<number>(0);
+
   const [showParentChallenge, setShowParentChallenge] = useState(false);
   const [challenge, setChallenge] = useState<ParentChallenge>(() => randomChallenge());
   const [challengeAnswer, setChallengeAnswer] = useState('');
 
   const [showParentPanel, setShowParentPanel] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [settingsDraft, setSettingsDraft] = useState<ParentSettings>(state.settings);
   const [exportText, setExportText] = useState('');
   const [importText, setImportText] = useState('');
 
   const [clockTs, setClockTs] = useState(Date.now());
+  const [showParentHint, setShowParentHint] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    try {
+      return window.localStorage.getItem(PARENT_HINT_KEY) !== 'dismissed';
+    } catch {
+      return true;
+    }
+  });
+
+  const clearParentGateHold = (): void => {
+    if (parentGateTimerRef.current) {
+      window.clearTimeout(parentGateTimerRef.current);
+      parentGateTimerRef.current = null;
+    }
+
+    if (parentGateIntervalRef.current) {
+      window.clearInterval(parentGateIntervalRef.current);
+      parentGateIntervalRef.current = null;
+    }
+
+    setParentHoldActive(false);
+    setParentHoldProgress(0);
+  };
 
   useEffect(() => {
     stateRef.current = state;
@@ -159,6 +249,12 @@ export default function App(): JSX.Element {
 
     return () => {
       window.clearInterval(clockId);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearParentGateHold();
     };
   }, []);
 
@@ -204,48 +300,29 @@ export default function App(): JSX.Element {
     state.lastSnackResetDate === toIsoDate(Date.now()) ? state.snackCountToday : 0;
   const snacksRemaining = Math.max(0, CAPS.snackPerDay - snacksUsedToday);
 
-  const mirrorPromptText = useMemo(() => {
+  const mirrorPrompt = useMemo(() => {
     if (!pendingIntent) {
-      return '';
+      return {
+        promptText: '',
+        promptIcon: 'meal' as PromptIconKey
+      };
     }
 
-    switch (pendingIntent) {
-      case 'feedMeal':
-        return state.settings.perActionPrompts.feedMeal;
-      case 'feedSnack':
-        return state.settings.perActionPrompts.feedSnack;
-      case 'play':
-        return state.settings.perActionPrompts.play;
-      case 'learn':
-        return state.settings.perActionPrompts.learn;
-      case 'sleep':
-        return state.settings.perActionPrompts.sleep;
-      default:
-        return '';
-    }
+    const promptKey = PROMPT_KEY_BY_INTENT[pendingIntent];
+    const configured = state.settings.perActionPrompts[promptKey];
+
+    return {
+      promptText: configured.promptText,
+      promptIcon: configured.promptIcon ?? defaultPromptIconForIntent(pendingIntent)
+    };
   }, [pendingIntent, state.settings.perActionPrompts]);
 
-  const startParentGateHold = (): void => {
-    setParentHoldActive(true);
-    if (parentGateTimerRef.current) {
-      window.clearTimeout(parentGateTimerRef.current);
-    }
+  const needsEggSelection = state.stage === 'egg' && state.eggStyle === null;
 
-    parentGateTimerRef.current = window.setTimeout(() => {
-      setChallenge(randomChallenge());
-      setChallengeAnswer('');
-      setShowParentChallenge(true);
-      setParentHoldActive(false);
-    }, 2000);
-  };
-
-  const stopParentGateHold = (): void => {
-    setParentHoldActive(false);
-    if (parentGateTimerRef.current) {
-      window.clearTimeout(parentGateTimerRef.current);
-      parentGateTimerRef.current = null;
-    }
-  };
+  const clockLabel = new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(clockTs);
 
   const showMessage = (message: string): void => {
     setToast(message);
@@ -258,6 +335,7 @@ export default function App(): JSX.Element {
   const continueIntent = (intent: Intent): void => {
     if (intent === 'feedMeal') {
       doAction('feedMeal');
+      setShowFeedSheet(false);
       showMessage('Meal complete. Great care!');
       return;
     }
@@ -269,6 +347,7 @@ export default function App(): JSX.Element {
       }
 
       doAction('feedSnack');
+      setShowFeedSheet(false);
       showMessage('Snack time complete.');
       return;
     }
@@ -320,12 +399,57 @@ export default function App(): JSX.Element {
       return;
     }
 
+    if (needsEggSelection) {
+      showMessage('Pick an egg first.');
+      return;
+    }
+
     if (state.settings.mirrorEnabled) {
       setPendingIntent(intent);
       return;
     }
 
     continueIntent(intent);
+  };
+
+  const dismissParentHint = (): void => {
+    setShowParentHint(false);
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(PARENT_HINT_KEY, 'dismissed');
+    } catch {
+      // Ignore quota and privacy mode issues.
+    }
+  };
+
+  const startParentGateHold = (): void => {
+    clearParentGateHold();
+    parentHoldStartedAtRef.current = Date.now();
+    setParentHoldActive(true);
+
+    parentGateIntervalRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - parentHoldStartedAtRef.current;
+      const progress = Math.min(100, Math.round((elapsed / 2000) * 100));
+      setParentHoldProgress(progress);
+    }, 40);
+
+    parentGateTimerRef.current = window.setTimeout(() => {
+      clearParentGateHold();
+      setChallenge(randomChallenge());
+      setChallengeAnswer('');
+      setShowParentChallenge(true);
+      dismissParentHint();
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate(25);
+      }
+    }, 2000);
+  };
+
+  const stopParentGateHold = (): void => {
+    clearParentGateHold();
   };
 
   const resolveMirrorDone = (): void => {
@@ -369,8 +493,21 @@ export default function App(): JSX.Element {
 
   const importSave = (): void => {
     try {
-      const parsed = JSON.parse(importText) as GameState;
-      dispatch({ type: 'importState', state: parsed, nowTs: Date.now() });
+      const parsed = JSON.parse(importText) as unknown;
+      if (typeof parsed !== 'object' || parsed === null) {
+        throw new Error('Invalid save shape');
+      }
+      const importAdapter: StorageAdapter = {
+        getItem() {
+          return JSON.stringify(parsed);
+        },
+        setItem() {
+          // no-op
+        }
+      };
+
+      const normalized = loadState(importAdapter, Date.now());
+      dispatch({ type: 'importState', state: normalized, nowTs: Date.now() });
       setShowParentPanel(false);
       showMessage('Save imported.');
     } catch {
@@ -385,7 +522,29 @@ export default function App(): JSX.Element {
       nowTs: Date.now(),
       outcome: { preserveSettingsOnRestart: true }
     });
-    showMessage('New egg started.');
+
+    setShowParentPanel(false);
+    setShowStatusSheet(false);
+    setShowFeedSheet(false);
+    setPendingIntent(null);
+    setConfirmAction(null);
+    showMessage('New egg started. Pick a style to hatch your pet.');
+  };
+
+  const hatchEarly = (): void => {
+    if (state.stage === 'adult') {
+      showMessage('Your pet is already an adult.');
+      return;
+    }
+
+    if (state.stage === 'egg' && !state.eggStyle) {
+      showMessage('Pick an egg style first.');
+      return;
+    }
+
+    doAction('hatchEarly');
+    setConfirmAction(null);
+    showMessage(state.stage === 'egg' ? 'Egg hatched early!' : 'Stage advanced early.');
   };
 
   const handlePlayChoice = (side: Side): void => {
@@ -418,18 +577,47 @@ export default function App(): JSX.Element {
     showMessage(correct ? 'Great learning!' : 'Good try, keep practicing.');
   };
 
-  const clockLabel = new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(clockTs);
+  const chooseEggStyle = (eggStyle: EggStyle): void => {
+    dispatch({ type: 'setEggStyle', eggStyle, nowTs: Date.now() });
+    showMessage(`${EGG_META[eggStyle].name} selected.`);
+  };
+
+  const handleDockAction = (action: DockAction): void => {
+    if (action === 'feed') {
+      setShowFeedSheet(true);
+      return;
+    }
+
+    if (action === 'play') {
+      requestIntent('play');
+      return;
+    }
+
+    if (action === 'learn') {
+      requestIntent('learn');
+      return;
+    }
+
+    if (action === 'sleep') {
+      if (state.asleep) {
+        doAction('wake');
+        showMessage('Your pet woke up.');
+      } else {
+        requestIntent('sleep');
+      }
+      return;
+    }
+
+    setShowStatusSheet(true);
+  };
 
   if (state.dead) {
     return (
       <div className="app-shell dead-screen">
-        <div className="dead-content">
+        <div className="dead-content pixel-card">
           <p className="pet dead">🕊️</p>
           <h1>Your pet went to rest</h1>
-          <p>Let’s start a new egg when you’re ready.</p>
+          <p>Start a new egg when you are ready.</p>
           <button type="button" className="primary-btn" onClick={restartGame}>
             Restart
           </button>
@@ -438,185 +626,231 @@ export default function App(): JSX.Element {
     );
   }
 
+  if (needsEggSelection) {
+    return (
+      <div className="app-shell egg-select-shell">
+        <section className="egg-picker pixel-card">
+          <h1>Pick an Egg</h1>
+          <p className="helper-text">Each egg grows into a different critter friend.</p>
+
+          <div className="egg-grid">
+            {EGG_STYLES.map((eggStyle) => (
+              <button
+                key={eggStyle}
+                type="button"
+                className="egg-option"
+                onClick={() => chooseEggStyle(eggStyle)}
+              >
+                <EggSprite eggStyle={eggStyle} size="medium" />
+                <strong>{EGG_META[eggStyle].name}</strong>
+                <span>{EGG_META[eggStyle].blurb}</span>
+                <small>Variant: {EGG_META[eggStyle].variant}</small>
+              </button>
+            ))}
+          </div>
+
+          <p className="helper-text">Grown-ups: hold the lock icon for 2 seconds to open Parent Mode.</p>
+        </section>
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <button
-          type="button"
-          className={`parent-gate ${parentHoldActive ? 'holding' : ''}`}
-          aria-label="Open parent mode"
-          onPointerDown={startParentGateHold}
-          onPointerUp={stopParentGateHold}
-          onPointerLeave={stopParentGateHold}
-          onPointerCancel={stopParentGateHold}
-        >
-          •
-        </button>
-        <div className="top-meta">
-          <span className="chip">Stage: {stageLabel(state)}</span>
-          <span className="chip">Clock: {clockLabel}</span>
-        </div>
-      </header>
-
       <main className="main-view">
-        <section className="pet-panel">
-          <div className={`pet ${state.asleep ? 'asleep' : ''}`} aria-live="polite">
-            {stageEmoji(state)}
+        <section className="habitat-wrapper">
+          <div className={`habitat-bezel ${isNight(clockTs) ? 'night' : 'day'}`}>
+            <button
+              type="button"
+              className={`parent-lock ${parentHoldActive ? 'holding' : ''}`}
+              aria-label="Open parent mode"
+              onPointerDown={startParentGateHold}
+              onPointerUp={stopParentGateHold}
+              onPointerLeave={stopParentGateHold}
+              onPointerCancel={stopParentGateHold}
+            >
+              <ActionGlyph icon="lock" />
+              <span className="lock-progress-track" aria-hidden="true">
+                <span style={{ width: `${parentHoldProgress}%` }} />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="status-mini-btn"
+              aria-label="Open status"
+              onClick={() => setShowStatusSheet(true)}
+            >
+              <ActionGlyph icon="status" />
+            </button>
+
+            <div className="habitat-hud">
+              <div className="hud-chip-row">
+                <span className="hud-chip">{stageLabel(state)}</span>
+                <span className="hud-chip">{clockLabel}</span>
+              </div>
+
+              <div className="meter-row">
+                <CompactMeter label="Hunger" value={state.hunger} tone="hunger" />
+                <CompactMeter label="Happy" value={state.happiness} tone="happy" />
+                <CompactMeter label="Learn" value={state.training} tone="training" />
+              </div>
+            </div>
+
+            <div className="habitat-screen">
+              <div className="pixel-grid" aria-hidden="true" />
+              <div className="ground-line" aria-hidden="true" />
+              <div className="decor decor-plant" aria-hidden="true">✿</div>
+              <div className="decor decor-sky" aria-hidden="true">
+                {isNight(clockTs) ? '✦ ✦ ✧' : '☁ ☀'}
+              </div>
+
+              <div className={`critter-zone ${state.asleep ? 'asleep' : ''}`} aria-live="polite">
+                {state.stage === 'egg' ? (
+                  <EggSprite eggStyle={state.eggStyle ?? 'speckled'} size="large" />
+                ) : (
+                  <CritterSprite
+                    variant={state.critterVariant}
+                    stage={state.stage}
+                    asleep={state.asleep}
+                    sickness={state.sickness}
+                  />
+                )}
+              </div>
+
+              <div className="status-flags">
+                {state.asleep && <p>Sleeping... zZz</p>}
+                {state.sickness && <p className="warning">Feeling sick</p>}
+                {state.attentionDemand.active && <p className="attention">Needs attention</p>}
+              </div>
+            </div>
           </div>
-          {state.asleep && <p className="status-note">Sleeping... zZz</p>}
-          {state.sickness && <p className="status-note warning">Feeling sick</p>}
-          {state.attentionDemand.active && <p className="status-note attention">Needs attention!</p>}
-          <div className="stats-strip">
-            <span>Age: {state.ageDays} day(s)</span>
-            <span>Weight: {state.weight}</span>
-            <span>Poop: {state.poopCount}</span>
-          </div>
-        </section>
-
-        <section className="meters">
-          <Meter label="Hunger" value={state.hunger} accentClass="meter-hunger" />
-          <Meter label="Happiness" value={state.happiness} accentClass="meter-happy" />
-          <Meter label="Training" value={state.training} accentClass="meter-training" />
-        </section>
-
-        <section className="action-panel">
-          {activeTab === 'feed' && (
-            <div className="action-grid">
-              <button type="button" className="primary-btn" onClick={() => requestIntent('feedMeal')}>
-                Meal
-              </button>
-              <button type="button" className="secondary-btn" onClick={() => requestIntent('feedSnack')}>
-                Snack ({snacksRemaining} left)
-              </button>
-              <p className="helper-text">Meals are stronger. Snacks are capped at 3 per day.</p>
-            </div>
-          )}
-
-          {activeTab === 'play' && (
-            <div className="action-grid">
-              <button type="button" className="primary-btn" onClick={() => requestIntent('play')}>
-                Start Star Guess
-              </button>
-              <p className="helper-text">Mirror prompt comes first, then 15 seconds to guess left or right.</p>
-            </div>
-          )}
-
-          {activeTab === 'learn' && (
-            <div className="action-grid">
-              <button type="button" className="primary-btn" onClick={() => requestIntent('learn')}>
-                Start Letter Game
-              </button>
-              <p className="helper-text">Find the target letter before the timer ends.</p>
-            </div>
-          )}
-
-          {activeTab === 'sleep' && (
-            <div className="action-grid">
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={() => {
-                  if (state.asleep) {
-                    doAction('wake');
-                    showMessage('Your pet woke up.');
-                  } else {
-                    requestIntent('sleep');
-                  }
-                }}
-              >
-                {state.asleep ? 'Wake' : 'Sleep'}
-              </button>
-              <p className="helper-text">
-                Sleep window: {state.settings.sleepWindow.start} - {state.settings.sleepWindow.end}
-              </p>
-            </div>
-          )}
-
-          {activeTab === 'status' && (
-            <div className="action-grid status-grid">
-              <button type="button" className="secondary-btn" onClick={() => doAction('clean')}>
-                Clean
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => {
-                  doAction('medicine');
-                  showMessage('Medicine given.');
-                }}
-              >
-                Medicine
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => {
-                  doAction('praise');
-                  showMessage('Praise shared.');
-                }}
-              >
-                Praise
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => {
-                  doAction('scold');
-                  showMessage('Scold used.');
-                }}
-              >
-                Scold
-              </button>
-            </div>
-          )}
         </section>
       </main>
 
-      <nav className="bottom-nav" aria-label="Main actions">
-        <button
-          type="button"
-          className={activeTab === 'feed' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => setActiveTab('feed')}
-        >
-          Feed
-        </button>
-        <button
-          type="button"
-          className={activeTab === 'play' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => setActiveTab('play')}
-        >
-          Play
-        </button>
-        <button
-          type="button"
-          className={activeTab === 'learn' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => setActiveTab('learn')}
-        >
-          Learn
-        </button>
-        <button
-          type="button"
-          className={activeTab === 'sleep' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => setActiveTab('sleep')}
-        >
-          Sleep
-        </button>
-        <button
-          type="button"
-          className={activeTab === 'status' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => setActiveTab('status')}
-        >
-          Status
-        </button>
+      <nav className="action-dock" aria-label="Main actions">
+        <DockButton
+          label="Feed"
+          icon="meal"
+          active={showFeedSheet}
+          onClick={() => handleDockAction('feed')}
+        />
+        <DockButton label="Play" icon="play" onClick={() => handleDockAction('play')} />
+        <DockButton label="Learn" icon="learn" onClick={() => handleDockAction('learn')} />
+        <DockButton
+          label={state.asleep ? 'Wake' : 'Sleep'}
+          icon="sleep"
+          onClick={() => handleDockAction('sleep')}
+        />
+        <DockButton
+          label="Status"
+          icon="status"
+          active={showStatusSheet}
+          onClick={() => handleDockAction('status')}
+        />
       </nav>
+
+      {showParentHint && !showParentPanel && (
+        <div className="hint-overlay" role="status">
+          <div className="hint-card pixel-card">
+            <p>Grown-ups: hold the lock for 2 seconds to open Parent Mode.</p>
+            <button type="button" className="primary-btn" onClick={dismissParentHint}>
+              Got It
+            </button>
+          </div>
+        </div>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
 
+      <Modal open={showFeedSheet} title="Feed" onClose={() => setShowFeedSheet(false)}>
+        <div className="sheet-body">
+          <button type="button" className="primary-btn" onClick={() => requestIntent('feedMeal')}>
+            Meal
+          </button>
+          <button type="button" className="secondary-btn" onClick={() => requestIntent('feedSnack')}>
+            Snack ({snacksRemaining} left)
+          </button>
+          <p className="helper-text">Meals fill more. Snacks are capped at 3 per day.</p>
+        </div>
+      </Modal>
+
+      <Modal open={showStatusSheet} title="Status" onClose={() => setShowStatusSheet(false)}>
+        <div className="sheet-body">
+          <div className="status-stat-grid">
+            <div className="status-stat-card">
+              <span>📅</span>
+              <strong>{state.ageDays} day(s)</strong>
+              <small>Age</small>
+            </div>
+            <div className="status-stat-card">
+              <span>⚖️</span>
+              <strong>{state.weight}</strong>
+              <small>Weight</small>
+            </div>
+            <div className="status-stat-card">
+              <span>💩</span>
+              <strong>{state.poopCount}</strong>
+              <small>Poop</small>
+            </div>
+          </div>
+
+          <div className="status-lines">
+            <p>Sleep window: {state.settings.sleepWindow.start} - {state.settings.sleepWindow.end}</p>
+            <p>Variant: {state.critterVariant ? state.critterVariant : 'Unknown'}</p>
+          </div>
+
+          <div className="status-actions-grid">
+            <button type="button" className="secondary-btn" onClick={() => doAction('clean')}>
+              Clean
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => {
+                doAction('medicine');
+                showMessage('Medicine given.');
+              }}
+            >
+              Medicine
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => {
+                doAction('praise');
+                showMessage('Praise shared.');
+              }}
+            >
+              Praise
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => {
+                doAction('scold');
+                showMessage('Scold used.');
+              }}
+            >
+              Scold
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={Boolean(pendingIntent)} title="Mirror Prompt" onClose={cancelMirror}>
         <div className="mirror-body">
-          <p>{mirrorPromptText}</p>
+          <div className="mirror-icon">
+            <ActionGlyph icon={mirrorPrompt.promptIcon} large />
+          </div>
+          <p className="mirror-text">{mirrorPrompt.promptText}</p>
           {state.settings.confirmMode === 'parent' ? (
-            <HoldToConfirmButton label="Hold 2s for Done" onConfirm={resolveMirrorDone} />
+            <HoldToConfirmButton
+              label="Hold to finish"
+              helperText="Keep holding for 2 seconds"
+              onConfirm={resolveMirrorDone}
+            />
           ) : (
             <TimerConfirm
               seconds={state.settings.timerSeconds}
@@ -805,108 +1039,87 @@ export default function App(): JSX.Element {
             </label>
           </div>
 
-          <label className="field-label">
-            Feed meal prompt
-            <textarea
-              className="text-input"
-              value={settingsDraft.perActionPrompts.feedMeal}
-              onChange={(event) =>
-                setSettingsDraft({
-                  ...settingsDraft,
-                  perActionPrompts: {
-                    ...settingsDraft.perActionPrompts,
-                    feedMeal: event.target.value
+          {PROMPT_ROWS.map((row) => (
+            <div key={row.key} className="prompt-edit-card">
+              <label className="field-label">
+                {row.label} prompt
+                <textarea
+                  className="text-input"
+                  value={settingsDraft.perActionPrompts[row.key].promptText}
+                  onChange={(event) =>
+                    setSettingsDraft({
+                      ...settingsDraft,
+                      perActionPrompts: {
+                        ...settingsDraft.perActionPrompts,
+                        [row.key]: {
+                          ...settingsDraft.perActionPrompts[row.key],
+                          promptText: event.target.value
+                        }
+                      }
+                    })
                   }
-                })
-              }
-            />
-          </label>
+                />
+              </label>
 
-          <label className="field-label">
-            Feed snack prompt
-            <textarea
-              className="text-input"
-              value={settingsDraft.perActionPrompts.feedSnack}
-              onChange={(event) =>
-                setSettingsDraft({
-                  ...settingsDraft,
-                  perActionPrompts: {
-                    ...settingsDraft.perActionPrompts,
-                    feedSnack: event.target.value
+              <label className="field-label">
+                Prompt icon
+                <select
+                  className="text-input"
+                  value={
+                    settingsDraft.perActionPrompts[row.key].promptIcon ?? DEFAULT_PROMPT_ICONS[row.key]
                   }
-                })
-              }
-            />
-          </label>
-
-          <label className="field-label">
-            Play prompt
-            <textarea
-              className="text-input"
-              value={settingsDraft.perActionPrompts.play}
-              onChange={(event) =>
-                setSettingsDraft({
-                  ...settingsDraft,
-                  perActionPrompts: {
-                    ...settingsDraft.perActionPrompts,
-                    play: event.target.value
+                  onChange={(event) =>
+                    setSettingsDraft({
+                      ...settingsDraft,
+                      perActionPrompts: {
+                        ...settingsDraft.perActionPrompts,
+                        [row.key]: {
+                          ...settingsDraft.perActionPrompts[row.key],
+                          promptIcon: event.target.value as PromptIconKey
+                        }
+                      }
+                    })
                   }
-                })
-              }
-            />
-          </label>
-
-          <label className="field-label">
-            Learn prompt
-            <textarea
-              className="text-input"
-              value={settingsDraft.perActionPrompts.learn}
-              onChange={(event) =>
-                setSettingsDraft({
-                  ...settingsDraft,
-                  perActionPrompts: {
-                    ...settingsDraft.perActionPrompts,
-                    learn: event.target.value
-                  }
-                })
-              }
-            />
-          </label>
-
-          <label className="field-label">
-            Sleep prompt
-            <textarea
-              className="text-input"
-              value={settingsDraft.perActionPrompts.sleep}
-              onChange={(event) =>
-                setSettingsDraft({
-                  ...settingsDraft,
-                  perActionPrompts: {
-                    ...settingsDraft.perActionPrompts,
-                    sleep: event.target.value
-                  }
-                })
-              }
-            />
-          </label>
+                >
+                  {PROMPT_ICON_OPTIONS.map((iconOption) => (
+                    <option key={iconOption} value={iconOption}>
+                      {iconOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ))}
 
           <div className="button-row">
             <button type="button" className="primary-btn" onClick={applySettings}>
               Save Settings
             </button>
-            <button type="button" className="secondary-btn" onClick={restartGame}>
-              Reset Game
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => setConfirmAction('hatchEarly')}
+            >
+              Hatch Early
             </button>
           </div>
 
           <div className="button-row">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => setConfirmAction('restart')}
+            >
+              Restart Pet
+            </button>
             <button type="button" className="secondary-btn" onClick={exportSave}>
               Export JSON
             </button>
-            <button type="button" className="secondary-btn" onClick={importSave}>
-              Import JSON
-            </button>
           </div>
+
+          <button type="button" className="secondary-btn" onClick={importSave}>
+            Import JSON
+          </button>
 
           <label className="field-label">
             Export data
@@ -922,13 +1135,31 @@ export default function App(): JSX.Element {
               rows={5}
             />
           </label>
+        </div>
+      </Modal>
 
-          <div className="debug-box">
-            <p>lastUpdateTs: {state.lastUpdateTs}</p>
-            <p>snackCountToday: {state.snackCountToday}</p>
-            <p>lastSnackResetDate: {state.lastSnackResetDate}</p>
-            <p>poopCount: {state.poopCount}</p>
-            <p>sickMinutes: {Math.round(state.sickMinutes)}</p>
+      <Modal open={Boolean(confirmAction)} title={getConfirmTitle(confirmAction)} onClose={() => setConfirmAction(null)}>
+        <div className="sheet-body">
+          <p>{getConfirmBody(confirmAction)}</p>
+          <div className="button-row">
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={() => {
+                if (confirmAction === 'restart') {
+                  restartGame();
+                }
+
+                if (confirmAction === 'hatchEarly') {
+                  hatchEarly();
+                }
+              }}
+            >
+              Yes, continue
+            </button>
+            <button type="button" className="secondary-btn" onClick={() => setConfirmAction(null)}>
+              Cancel
+            </button>
           </div>
         </div>
       </Modal>
@@ -962,5 +1193,203 @@ function TimerConfirm({ seconds, label, onConfirm }: TimerConfirmProps): JSX.Ele
     <button type="button" className="primary-btn" disabled={!ready} onClick={onConfirm}>
       {ready ? label : `Wait ${remaining}s`}
     </button>
+  );
+}
+
+interface DockButtonProps {
+  label: string;
+  icon: DockIcon;
+  onClick: () => void;
+  active?: boolean;
+}
+
+function DockButton({ label, icon, onClick, active = false }: DockButtonProps): JSX.Element {
+  return (
+    <button type="button" className={`dock-btn ${active ? 'active' : ''}`} onClick={onClick}>
+      <ActionGlyph icon={icon} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+interface CompactMeterProps {
+  label: string;
+  value: number;
+  tone: 'hunger' | 'happy' | 'training';
+}
+
+function CompactMeter({ label, value, tone }: CompactMeterProps): JSX.Element {
+  const safe = Math.max(0, Math.min(100, Math.round(value)));
+
+  return (
+    <div className="compact-meter">
+      <div className="compact-meter-meta">
+        <span>{label}</span>
+        <strong>{safe}</strong>
+      </div>
+      <div className="compact-meter-track">
+        <span className={`compact-meter-fill ${tone}`} style={{ width: `${safe}%` }} />
+      </div>
+    </div>
+  );
+}
+
+interface ActionGlyphProps {
+  icon: DockIcon;
+  large?: boolean;
+}
+
+function ActionGlyph({ icon, large = false }: ActionGlyphProps): JSX.Element {
+  const symbols: Record<DockIcon, string> = {
+    meal: '🍽️',
+    snack: '🍎',
+    play: '⚽',
+    learn: '📘',
+    sleep: '🛌',
+    status: '📊',
+    lock: '🔒'
+  };
+
+  return <span className={`action-glyph ${large ? 'large' : ''}`}>{symbols[icon]}</span>;
+}
+
+interface EggSpriteProps {
+  eggStyle: EggStyle;
+  size: 'medium' | 'large';
+}
+
+function EggSprite({ eggStyle, size }: EggSpriteProps): JSX.Element {
+  return (
+    <svg
+      className={`egg-sprite ${size}`}
+      viewBox="0 0 42 48"
+      role="img"
+      aria-label={`${eggStyle} egg`}
+      shapeRendering="crispEdges"
+    >
+      <ellipse cx="21" cy="25" rx="14" ry="18" fill="#f6f1e3" />
+      <ellipse cx="21" cy="31" rx="13" ry="10" fill="#e7dcc7" opacity="0.75" />
+      <ellipse cx="15" cy="16" rx="3" ry="4" fill="#ffffff" opacity="0.7" />
+      {eggStyle === 'speckled' && (
+        <>
+          <circle cx="13" cy="27" r="2" fill="#9d724e" />
+          <circle cx="20" cy="20" r="2" fill="#9d724e" />
+          <circle cx="25" cy="30" r="1.5" fill="#9d724e" />
+          <circle cx="30" cy="22" r="2" fill="#9d724e" />
+        </>
+      )}
+      {eggStyle === 'striped' && (
+        <>
+          <rect x="11" y="18" width="20" height="3" fill="#4a7ca4" />
+          <rect x="9" y="25" width="24" height="3" fill="#4a7ca4" />
+          <rect x="11" y="32" width="20" height="3" fill="#4a7ca4" />
+        </>
+      )}
+      {eggStyle === 'star' && (
+        <>
+          <polygon points="20,16 22,20 26,20 23,23 24,27 20,25 16,27 17,23 14,20 18,20" fill="#c98b1a" />
+          <circle cx="28" cy="30" r="2" fill="#c98b1a" />
+          <circle cx="14" cy="30" r="2" fill="#c98b1a" />
+        </>
+      )}
+      {eggStyle === 'leaf' && (
+        <>
+          <path d="M17 18c4-3 8-2 10 2-4 3-8 2-10-2Z" fill="#4d8f58" />
+          <path d="M14 30c4-3 8-2 10 2-4 3-8 2-10-2Z" fill="#4d8f58" />
+          <path d="M22 24c4-3 8-2 10 2-4 3-8 2-10-2Z" fill="#4d8f58" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+interface CritterSpriteProps {
+  variant: CritterVariant | null;
+  stage: GameState['stage'];
+  asleep: boolean;
+  sickness: boolean;
+}
+
+function CritterSprite({ variant, stage, asleep, sickness }: CritterSpriteProps): JSX.Element {
+  const paletteByVariant: Record<CritterVariant, { body: string; accent: string; shadow: string }> = {
+    sunny: { body: '#f0b84c', accent: '#f8e98f', shadow: '#cd8d2f' },
+    stripe: { body: '#5fa0de', accent: '#e9f2ff', shadow: '#2f73af' },
+    astro: { body: '#b98ee8', accent: '#ffe680', shadow: '#8456bc' },
+    forest: { body: '#79b265', accent: '#d7f2ad', shadow: '#4e8344' }
+  };
+
+  const activeVariant = variant ?? 'sunny';
+  const palette = paletteByVariant[activeVariant];
+
+  const stageClass =
+    stage === 'baby'
+      ? 'baby'
+      : stage === 'child'
+        ? 'child'
+        : stage === 'teen'
+          ? 'teen'
+          : 'adult';
+
+  return (
+    <svg
+      className={`critter-sprite ${stageClass}`}
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label="critter"
+      shapeRendering="crispEdges"
+    >
+      <rect x="6" y="5" width="3" height="3" fill={palette.shadow} />
+      <rect x="15" y="5" width="3" height="3" fill={palette.shadow} />
+      <rect x="5" y="8" width="14" height="12" fill={palette.body} />
+      <rect x="7" y="10" width="10" height="8" fill={palette.accent} opacity="0.5" />
+      <rect x="8" y="19" width="2" height="2" fill={palette.shadow} />
+      <rect x="14" y="19" width="2" height="2" fill={palette.shadow} />
+
+      {activeVariant === 'stripe' && (
+        <>
+          <rect x="7" y="9" width="1" height="8" fill={palette.shadow} />
+          <rect x="16" y="9" width="1" height="8" fill={palette.shadow} />
+        </>
+      )}
+
+      {activeVariant === 'astro' && (
+        <polygon
+          points="12,3 13,5 15,5 13.5,6.5 14,8.5 12,7.3 10,8.5 10.5,6.5 9,5 11,5"
+          fill="#ffe680"
+        />
+      )}
+
+      {activeVariant === 'forest' && (
+        <path d="M9 4c1.5-1.7 3.5-2.3 6-.8-1.2 2.2-3.3 3-6 .8Z" fill="#4a8542" />
+      )}
+
+      {activeVariant === 'sunny' && <rect x="10" y="3" width="4" height="2" fill="#f8e98f" />}
+
+      {!asleep && !sickness && (
+        <>
+          <rect x="9" y="12" width="2" height="2" fill="#222" />
+          <rect x="13" y="12" width="2" height="2" fill="#222" />
+          <rect x="11" y="15" width="2" height="1" fill="#222" />
+        </>
+      )}
+
+      {asleep && (
+        <>
+          <rect x="8" y="12" width="3" height="1" fill="#222" />
+          <rect x="13" y="12" width="3" height="1" fill="#222" />
+          <rect x="10" y="15" width="4" height="1" fill="#222" />
+        </>
+      )}
+
+      {sickness && (
+        <>
+          <rect x="9" y="12" width="2" height="1" fill="#222" />
+          <rect x="9" y="13" width="2" height="1" fill="#222" />
+          <rect x="13" y="12" width="2" height="1" fill="#222" />
+          <rect x="13" y="13" width="2" height="1" fill="#222" />
+          <rect x="10" y="16" width="4" height="1" fill="#a33" />
+        </>
+      )}
+    </svg>
   );
 }

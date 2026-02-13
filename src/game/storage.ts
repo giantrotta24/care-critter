@@ -1,4 +1,4 @@
-import { STORAGE_KEY } from './constants';
+import { DEFAULT_PROMPT_ICONS, EGG_TO_VARIANT, EGG_STYLES, STORAGE_KEY } from './constants';
 import { createInitialState } from './engine';
 import type { GameState } from './types';
 
@@ -40,6 +40,65 @@ function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null;
 }
 
+const PROMPT_KEYS = ['feedMeal', 'feedSnack', 'play', 'learn', 'sleep'] as const;
+const PROMPT_ICON_KEYS = ['meal', 'snack', 'play', 'learn', 'sleep'] as const;
+
+function isPromptIcon(value: unknown): value is (typeof PROMPT_ICON_KEYS)[number] {
+  return typeof value === 'string' && PROMPT_ICON_KEYS.includes(value as (typeof PROMPT_ICON_KEYS)[number]);
+}
+
+function normalizePromptEntry(
+  baseText: string,
+  baseIcon: (typeof PROMPT_ICON_KEYS)[number],
+  incoming: unknown
+): { promptText: string; promptIcon: (typeof PROMPT_ICON_KEYS)[number] } {
+  if (typeof incoming === 'string') {
+    return {
+      promptText: incoming,
+      promptIcon: baseIcon
+    };
+  }
+
+  if (!isRecord(incoming)) {
+    return {
+      promptText: baseText,
+      promptIcon: baseIcon
+    };
+  }
+
+  return {
+    promptText: typeof incoming.promptText === 'string' ? incoming.promptText : baseText,
+    promptIcon: isPromptIcon(incoming.promptIcon) ? incoming.promptIcon : baseIcon
+  };
+}
+
+function normalizePerActionPrompts(
+  base: GameState['settings']['perActionPrompts'],
+  incoming: unknown
+): GameState['settings']['perActionPrompts'] {
+  const source = isRecord(incoming) ? incoming : {};
+  const next = { ...base };
+
+  for (const key of PROMPT_KEYS) {
+    const baseEntry = base[key];
+    next[key] = normalizePromptEntry(
+      baseEntry.promptText,
+      baseEntry.promptIcon ?? DEFAULT_PROMPT_ICONS[key],
+      source[key]
+    );
+  }
+
+  return next;
+}
+
+function isEggStyle(value: unknown): value is (typeof EGG_STYLES)[number] {
+  return typeof value === 'string' && EGG_STYLES.includes(value as (typeof EGG_STYLES)[number]);
+}
+
+function isCritterVariant(value: unknown): value is GameState['critterVariant'] {
+  return value === 'sunny' || value === 'stripe' || value === 'astro' || value === 'forest';
+}
+
 export function loadState(
   adapter: StorageAdapter = localStorageAdapter,
   nowTs = Date.now()
@@ -62,12 +121,10 @@ export function loadState(
       settings: {
         ...base.settings,
         ...(isRecord(parsed.settings) ? parsed.settings : {}),
-        perActionPrompts: {
-          ...base.settings.perActionPrompts,
-          ...(isRecord(parsed.settings) && isRecord(parsed.settings.perActionPrompts)
-            ? parsed.settings.perActionPrompts
-            : {})
-        },
+        perActionPrompts: normalizePerActionPrompts(
+          base.settings.perActionPrompts,
+          isRecord(parsed.settings) ? parsed.settings.perActionPrompts : undefined
+        ),
         sleepWindow: {
           ...base.settings.sleepWindow,
           ...(isRecord(parsed.settings) && isRecord(parsed.settings.sleepWindow)
@@ -84,9 +141,27 @@ export function loadState(
         ? merged.adultVariant
         : 'C';
 
+    const hasEggStyle = Object.prototype.hasOwnProperty.call(parsed, 'eggStyle');
+    const eggStyle = hasEggStyle
+      ? merged.eggStyle === null
+        ? null
+        : isEggStyle(merged.eggStyle)
+          ? merged.eggStyle
+          : 'speckled'
+      : 'speckled';
+
+    const critterVariant =
+      eggStyle === null
+        ? null
+        : isCritterVariant(merged.critterVariant)
+          ? merged.critterVariant
+          : EGG_TO_VARIANT[eggStyle];
+
     return {
       ...merged,
-      adultVariant
+      adultVariant,
+      eggStyle,
+      critterVariant
     };
   } catch {
     return createInitialState(nowTs);

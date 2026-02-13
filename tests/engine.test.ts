@@ -3,6 +3,14 @@ import { applyActionReward, applyTimeDecay, createInitialState } from '../src/ga
 import { toIsoDate } from '../src/game/time';
 
 describe('applyTimeDecay', () => {
+  it('starts new saves in egg selection state', () => {
+    const start = new Date('2026-02-10T10:00:00').getTime();
+    const state = createInitialState(start, undefined, () => 0.5);
+
+    expect(state.eggStyle).toBeNull();
+    expect(state.critterVariant).toBeNull();
+  });
+
   it('decreases hunger and happiness with awake decay', () => {
     const start = new Date('2026-02-10T10:00:00').getTime();
     const state = createInitialState(start, undefined, () => 0.5);
@@ -66,9 +74,25 @@ describe('snack daily reset', () => {
 });
 
 describe('stage progression', () => {
+  it('supports hatchEarly from egg and derives variant from egg style', () => {
+    const start = new Date('2026-02-10T10:00:00').getTime();
+    const state = {
+      ...createInitialState(start, undefined, () => 0.5),
+      eggStyle: 'leaf' as const
+    };
+
+    const next = applyActionReward(state, 'hatchEarly', {}, start + 1_000, () => 0.5);
+
+    expect(next.stage).toBe('baby');
+    expect(next.critterVariant).toBe('forest');
+  });
+
   it('advances from egg to adult with enough elapsed time', () => {
     const start = new Date('2026-02-10T10:00:00').getTime();
-    const state = createInitialState(start, undefined, () => 0.5);
+    const state = {
+      ...createInitialState(start, undefined, () => 0.5),
+      eggStyle: 'speckled' as const
+    };
 
     const totalMinutes = 5 + 24 * 60 + 2 * 24 * 60 + 2 * 24 * 60 + 1;
     const endTs = start + totalMinutes * 60 * 1000;

@@ -1,6 +1,31 @@
-import type { ParentSettings, Stage } from './types';
+import type {
+  CritterVariant,
+  EggStyle,
+  MirrorActionKey,
+  ParentSettings,
+  PromptIconKey,
+  Stage
+} from './types';
 
 export const STORAGE_KEY = 'care-critter-state-v1';
+export const PARENT_HINT_KEY = 'care-critter-parent-hint-v1';
+
+export const EGG_STYLES: EggStyle[] = ['speckled', 'striped', 'star', 'leaf'];
+
+export const EGG_TO_VARIANT: Record<EggStyle, CritterVariant> = {
+  speckled: 'sunny',
+  striped: 'stripe',
+  star: 'astro',
+  leaf: 'forest'
+};
+
+export const DEFAULT_PROMPT_ICONS: Record<MirrorActionKey, PromptIconKey> = {
+  feedMeal: 'meal',
+  feedSnack: 'snack',
+  play: 'play',
+  learn: 'learn',
+  sleep: 'sleep'
+};
 
 export const DECAY = {
   hungerPerMinute: 0.4,
@@ -68,11 +93,26 @@ export const DEFAULT_SETTINGS: ParentSettings = {
   confirmMode: 'parent',
   timerSeconds: 10,
   perActionPrompts: {
-    feedMeal: 'Take one bite at the table.',
-    feedSnack: 'Choose a healthy snack and take one bite.',
-    play: 'Do 10 seconds of movement.',
-    learn: 'Say the letter out loud.',
-    sleep: 'Time for bed routine.'
+    feedMeal: {
+      promptText: 'Take one bite at the table.',
+      promptIcon: 'meal'
+    },
+    feedSnack: {
+      promptText: 'Choose a healthy snack and take one bite.',
+      promptIcon: 'snack'
+    },
+    play: {
+      promptText: 'Move your body for 10 seconds.',
+      promptIcon: 'play'
+    },
+    learn: {
+      promptText: 'Say the letter out loud.',
+      promptIcon: 'learn'
+    },
+    sleep: {
+      promptText: 'Time for bedtime routine.',
+      promptIcon: 'sleep'
+    }
   },
   pauseDecay: false,
   sleepWindow: {
