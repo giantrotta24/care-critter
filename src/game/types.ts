@@ -22,6 +22,7 @@ export type PerActionPromptMap = Record<MirrorActionKey, MirrorPromptConfig>;
 
 export interface ParentSettings {
   mirrorEnabled: boolean;
+  hatchSoundEnabled: boolean;
   confirmMode: ConfirmMode;
   timerSeconds: number;
   perActionPrompts: PerActionPromptMap;

@@ -161,6 +161,9 @@ function getConfirmBody(confirmAction: ConfirmAction): string {
 export default function App(): JSX.Element {
   const [state, dispatch] = useReducer(gameReducer, undefined, initGameState);
   const stateRef = useRef(state);
+  const previousStageRef = useRef(state.stage);
+  const hatchTimersRef = useRef<number[]>([]);
+  const hatchAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null);
   const [showFeedSheet, setShowFeedSheet] = useState(false);
@@ -187,6 +190,9 @@ export default function App(): JSX.Element {
   const [importText, setImportText] = useState('');
 
   const [clockTs, setClockTs] = useState(Date.now());
+  const [hatchPhase, setHatchPhase] = useState<'idle' | 'shake' | 'crack' | 'pop'>('idle');
+  const [hatchEggStyle, setHatchEggStyle] = useState<EggStyle>('speckled');
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [showParentHint, setShowParentHint] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -212,6 +218,22 @@ export default function App(): JSX.Element {
 
     setParentHoldActive(false);
     setParentHoldProgress(0);
+  };
+
+  const clearHatchTimers = (): void => {
+    hatchTimersRef.current.forEach((id) => window.clearTimeout(id));
+    hatchTimersRef.current = [];
+  };
+
+  const playHatchSound = (): void => {
+    if (!state.settings.hatchSoundEnabled || !hatchAudioRef.current) {
+      return;
+    }
+
+    hatchAudioRef.current.currentTime = 0;
+    void hatchAudioRef.current.play().catch(() => {
+      // Ignore autoplay/gesture restrictions.
+    });
   };
 
   useEffect(() => {
@@ -255,7 +277,21 @@ export default function App(): JSX.Element {
   useEffect(() => {
     return () => {
       clearParentGateHold();
+      clearHatchTimers();
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = (): void => setPrefersReducedMotion(media.matches);
+    update();
+    media.addEventListener('change', update);
+
+    return () => media.removeEventListener('change', update);
   }, []);
 
   useEffect(() => {
@@ -295,6 +331,30 @@ export default function App(): JSX.Element {
       setToast('Time is up. Let us try another letter!');
     }
   }, [learnRound, learnSecondsLeft]);
+
+  useEffect(() => {
+    const previousStage = previousStageRef.current;
+
+    if (previousStage === 'egg' && state.stage === 'baby') {
+      setHatchEggStyle(state.eggStyle ?? 'speckled');
+      clearHatchTimers();
+      playHatchSound();
+
+      if (prefersReducedMotion) {
+        setHatchPhase('pop');
+        const end = window.setTimeout(() => setHatchPhase('idle'), 260);
+        hatchTimersRef.current = [end];
+      } else {
+        setHatchPhase('shake');
+        const crack = window.setTimeout(() => setHatchPhase('crack'), 420);
+        const pop = window.setTimeout(() => setHatchPhase('pop'), 760);
+        const end = window.setTimeout(() => setHatchPhase('idle'), 1080);
+        hatchTimersRef.current = [crack, pop, end];
+      }
+    }
+
+    previousStageRef.current = state.stage;
+  }, [state.stage, state.eggStyle, prefersReducedMotion, state.settings.hatchSoundEnabled]);
 
   const snacksUsedToday =
     state.lastSnackResetDate === toIsoDate(Date.now()) ? state.snackCountToday : 0;
@@ -661,6 +721,9 @@ export default function App(): JSX.Element {
       <main className="main-view">
         <section className="habitat-wrapper">
           <div className={`habitat-bezel ${isNight(clockTs) ? 'night' : 'day'}`}>
+            <audio ref={hatchAudioRef} preload="auto">
+              <source src="/sounds/hatch.wav" type="audio/wav" />
+            </audio>
             <button
               type="button"
               className={`parent-lock ${parentHoldActive ? 'holding' : ''}`}
@@ -697,8 +760,29 @@ export default function App(): JSX.Element {
               <div className="decor decor-sky" aria-hidden="true">
                 {isNight(clockTs) ? '✦ ✦ ✧' : '☁ ☀'}
               </div>
+              {hatchPhase !== 'idle' && (
+                <div className={`hatch-overlay phase-${hatchPhase}`} aria-hidden="true">
+                  {(hatchPhase === 'shake' || hatchPhase === 'crack') && (
+                    <>
+                      <div className={`hatch-egg ${hatchPhase === 'shake' ? 'shake' : ''}`}>
+                        <EggSprite eggStyle={hatchEggStyle} size="large" />
+                      </div>
+                      {hatchPhase === 'crack' && (
+                        <>
+                          <div className="hatch-crack-line hatch-crack-a" />
+                          <div className="hatch-crack-line hatch-crack-b" />
+                          <div className="hatch-flash" />
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
-              <div className={`critter-zone ${state.asleep ? 'asleep' : ''}`} aria-live="polite">
+              <div
+                className={`critter-zone ${state.asleep ? 'asleep' : ''} ${hatchPhase === 'pop' ? 'hatch-pop' : ''}`}
+                aria-live="polite"
+              >
                 {state.stage === 'egg' ? (
                   <EggSprite eggStyle={state.eggStyle ?? 'speckled'} size="large" />
                 ) : (
@@ -926,6 +1010,20 @@ export default function App(): JSX.Element {
                 setSettingsDraft({
                   ...settingsDraft,
                   mirrorEnabled: event.target.checked
+                })
+              }
+            />
+          </label>
+
+          <label className="switch-row">
+            <span>Hatch Sound</span>
+            <input
+              type="checkbox"
+              checked={settingsDraft.hatchSoundEnabled}
+              onChange={(event) =>
+                setSettingsDraft({
+                  ...settingsDraft,
+                  hatchSoundEnabled: event.target.checked
                 })
               }
             />

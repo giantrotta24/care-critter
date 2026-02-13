@@ -225,6 +225,12 @@ p {
   animation-duration: 3.1s;
 }
 
+.critter-zone.hatch-pop {
+  animation:
+    hatch-pop 0.32s ease-out,
+    pixel-bob 2.2s ease-in-out 0.32s infinite;
+}
+
 @keyframes pixel-bob {
   0%,
   100% {
@@ -233,6 +239,95 @@ p {
 
   50% {
     transform: translateX(-50%) translateY(-7px);
+  }
+}
+
+@keyframes hatch-pop {
+  0% {
+    transform: translateX(-50%) translateY(18px) scale(0.74);
+    opacity: 0;
+  }
+
+  65% {
+    transform: translateX(-50%) translateY(-8px) scale(1.06);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateX(-50%) translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.hatch-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.hatch-egg {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--ground-level) + 0.22rem);
+  transform: translateX(-50%);
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.2));
+}
+
+.hatch-egg.shake {
+  animation: hatch-shake 0.42s linear;
+}
+
+@keyframes hatch-shake {
+  0%,
+  100% {
+    transform: translateX(-50%) rotate(0deg);
+  }
+  20% {
+    transform: translateX(-53%) rotate(-5deg);
+  }
+  40% {
+    transform: translateX(-47%) rotate(4deg);
+  }
+  60% {
+    transform: translateX(-52%) rotate(-4deg);
+  }
+  80% {
+    transform: translateX(-48%) rotate(3deg);
+  }
+}
+
+.hatch-crack-line {
+  position: absolute;
+  width: 3px;
+  height: 52px;
+  background: rgba(57, 40, 20, 0.75);
+  bottom: calc(var(--ground-level) + 58px);
+  left: 50%;
+  transform-origin: center top;
+}
+
+.hatch-crack-a {
+  transform: translateX(-8px) rotate(18deg);
+}
+
+.hatch-crack-b {
+  transform: translateX(6px) rotate(-14deg);
+}
+
+.hatch-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255, 249, 205, 0.58) 0%, rgba(255, 249, 205, 0) 56%);
+  animation: hatch-flash 0.3s ease-out;
+}
+
+@keyframes hatch-flash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
@@ -794,6 +889,12 @@ textarea.text-input {
 @media (prefers-reduced-motion: reduce) {
   .critter-zone,
   .critter-zone.asleep {
+    animation: none;
+  }
+
+  .critter-zone.hatch-pop,
+  .hatch-egg.shake,
+  .hatch-flash {
     animation: none;
   }
 

@@ -90,6 +90,7 @@ export const SCOLD = {
 
 export const DEFAULT_SETTINGS: ParentSettings = {
   mirrorEnabled: true,
+  hatchSoundEnabled: false,
   confirmMode: 'parent',
   timerSeconds: 10,
   perActionPrompts: {
