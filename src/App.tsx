@@ -1255,9 +1255,12 @@ function MirrorCueArt({ icon }: MirrorCueArtProps): JSX.Element {
     return (
       <img
         className="mirror-illustration"
-        src="/prompt-cues/feed-meal.png"
+        src="/prompt-cues/feed-meal.jpeg"
         alt="Child taking a bite from a meal"
         loading="lazy"
+        decoding="async"
+        width={640}
+        height={427}
       />
     );
   }
@@ -1266,9 +1269,12 @@ function MirrorCueArt({ icon }: MirrorCueArtProps): JSX.Element {
     return (
       <img
         className="mirror-illustration"
-        src="/prompt-cues/feed-snack.png"
+        src="/prompt-cues/feed-snack.jpeg"
         alt="Child eating a healthy snack"
         loading="lazy"
+        decoding="async"
+        width={640}
+        height={427}
       />
     );
   }
@@ -1277,9 +1283,12 @@ function MirrorCueArt({ icon }: MirrorCueArtProps): JSX.Element {
     return (
       <img
         className="mirror-illustration"
-        src="/prompt-cues/play.png"
+        src="/prompt-cues/play-action.jpeg"
         alt="Child jumping and playing"
         loading="lazy"
+        decoding="async"
+        width={640}
+        height={427}
       />
     );
   }
@@ -1306,9 +1315,12 @@ function MirrorCueArt({ icon }: MirrorCueArtProps): JSX.Element {
     return (
       <img
         className="mirror-illustration"
-        src="/prompt-cues/sleep.png"
+        src="/prompt-cues/sleep-action.jpeg"
         alt="Child sleeping in bed"
         loading="lazy"
+        decoding="async"
+        width={640}
+        height={427}
       />
     );
   }
@@ -1316,9 +1328,12 @@ function MirrorCueArt({ icon }: MirrorCueArtProps): JSX.Element {
   return (
     <img
       className="mirror-illustration"
-      src="/prompt-cues/feed-meal.png"
+      src="/prompt-cues/feed-meal.jpeg"
       alt="Child taking a bite from a meal"
       loading="lazy"
+      decoding="async"
+      width={640}
+      height={427}
     />
   );
 }
