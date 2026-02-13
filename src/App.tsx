@@ -676,15 +676,6 @@ export default function App(): JSX.Element {
               </span>
             </button>
 
-            <button
-              type="button"
-              className="status-mini-btn"
-              aria-label="Open status"
-              onClick={() => setShowStatusSheet(true)}
-            >
-              <ActionGlyph icon="status" />
-            </button>
-
             <div className="habitat-hud">
               <div className="hud-chip-row">
                 <span className="hud-chip">{stageLabel(state)}</span>
@@ -842,7 +833,7 @@ export default function App(): JSX.Element {
       <Modal open={Boolean(pendingIntent)} title="Mirror Prompt" onClose={cancelMirror}>
         <div className="mirror-body">
           <div className="mirror-icon">
-            <ActionGlyph icon={mirrorPrompt.promptIcon} large />
+            <MirrorCueArt icon={mirrorPrompt.promptIcon} />
           </div>
           <p className="mirror-text">{mirrorPrompt.promptText}</p>
           {state.settings.confirmMode === 'parent' ? (
@@ -885,6 +876,7 @@ export default function App(): JSX.Element {
               <p>
                 Tap <strong>{learnRound.target}</strong>. Time left: {learnSecondsLeft}s
               </p>
+              <LearnTargetCard letter={learnRound.target} />
               <div className="choice-row">
                 {learnRound.choices.map((choice) => (
                   <button
@@ -1251,6 +1243,119 @@ function ActionGlyph({ icon, large = false }: ActionGlyphProps): JSX.Element {
   };
 
   return <span className={`action-glyph ${large ? 'large' : ''}`}>{symbols[icon]}</span>;
+}
+
+interface MirrorCueArtProps {
+  icon: PromptIconKey;
+}
+
+function MirrorCueArt({ icon }: MirrorCueArtProps): JSX.Element {
+  if (icon === 'play') {
+    return (
+      <svg className="mirror-illustration" viewBox="0 0 120 120" role="img" aria-label="child jumping">
+        <rect x="6" y="6" width="108" height="108" rx="16" fill="#dbf0ff" />
+        <circle cx="46" cy="35" r="10" fill="#ffcf99" />
+        <path d="M41 48h10l5 17H36l5-17Z" fill="#2f8de0" />
+        <path d="M36 64 22 75l6 7 12-9" fill="#2f8de0" />
+        <path d="M56 64 71 76l-6 7-13-10" fill="#2f8de0" />
+        <path d="M42 64 34 83l7 3 8-17" fill="#1c4f80" />
+        <path d="M52 64 65 80l-6 5-11-14" fill="#1c4f80" />
+        <circle cx="84" cy="74" r="13" fill="#ffb04d" />
+        <path d="M84 62v24M72 74h24" stroke="#fff4e1" strokeWidth="4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (icon === 'learn') {
+    return (
+      <svg className="mirror-illustration" viewBox="0 0 120 120" role="img" aria-label="big letters">
+        <rect x="6" y="6" width="108" height="108" rx="16" fill="#f4ecff" />
+        <rect x="18" y="18" width="84" height="84" rx="12" fill="#fff" />
+        <text x="34" y="73" fontSize="42" fontFamily="Verdana, sans-serif" fontWeight="700" fill="#ff7f50">
+          A
+        </text>
+        <text x="58" y="65" fontSize="30" fontFamily="Verdana, sans-serif" fontWeight="700" fill="#4e9de6">
+          B
+        </text>
+        <text x="74" y="84" fontSize="28" fontFamily="Verdana, sans-serif" fontWeight="700" fill="#49a85c">
+          C
+        </text>
+      </svg>
+    );
+  }
+
+  if (icon === 'sleep') {
+    return (
+      <svg className="mirror-illustration" viewBox="0 0 120 120" role="img" aria-label="child sleeping in bed">
+        <rect x="6" y="6" width="108" height="108" rx="16" fill="#d9e4ff" />
+        <rect x="18" y="66" width="84" height="26" rx="8" fill="#7d91bc" />
+        <rect x="20" y="56" width="30" height="12" rx="5" fill="#f8f3df" />
+        <circle cx="44" cy="52" r="10" fill="#ffc997" />
+        <path d="M52 64H24l9-13h22l-3 13Z" fill="#9dc4ff" />
+        <path d="M81 29a11 11 0 1 0 9 18 14 14 0 1 1-9-18Z" fill="#ffe680" />
+      </svg>
+    );
+  }
+
+  if (icon === 'snack') {
+    return (
+      <svg className="mirror-illustration" viewBox="0 0 120 120" role="img" aria-label="child taking a snack bite">
+        <rect x="6" y="6" width="108" height="108" rx="16" fill="#fff1d8" />
+        <circle cx="52" cy="38" r="12" fill="#ffc997" />
+        <path d="M40 50h24l5 21H35l5-21Z" fill="#ff9b54" />
+        <circle cx="72" cy="48" r="8" fill="#ff5f5f" />
+        <rect x="70" y="36" width="4" height="5" fill="#4e9b48" />
+        <path d="M61 47c-2 3-3 5-2 8" stroke="#1f2329" strokeWidth="2" strokeLinecap="round" />
+        <path d="M23 84h74" stroke="#996b3d" strokeWidth="4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="mirror-illustration" viewBox="0 0 120 120" role="img" aria-label="child taking a meal bite">
+      <rect x="6" y="6" width="108" height="108" rx="16" fill="#ffe9d6" />
+      <circle cx="48" cy="36" r="11" fill="#ffc997" />
+      <path d="M37 47h22l5 20H32l5-20Z" fill="#57a6e8" />
+      <ellipse cx="76" cy="73" rx="18" ry="11" fill="#f4f6f0" stroke="#7f8f9d" strokeWidth="2" />
+      <circle cx="72" cy="71" r="4" fill="#74b45f" />
+      <circle cx="80" cy="74" r="4" fill="#ff8f53" />
+      <path d="M64 57c-2 3-3 5-2 8" stroke="#1f2329" strokeWidth="2" strokeLinecap="round" />
+      <path d="M85 56v12M89 56v12M81 56h12" stroke="#52616d" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+interface LearnTargetCardProps {
+  letter: string;
+}
+
+function LearnTargetCard({ letter }: LearnTargetCardProps): JSX.Element {
+  return (
+    <div className="learn-target-card" aria-label={`Target letter ${letter}`}>
+      <svg viewBox="0 0 220 120" role="img" aria-hidden="true">
+        <defs>
+          <linearGradient id="learnBg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#fff8d6" />
+            <stop offset="100%" stopColor="#ffe1b7" />
+          </linearGradient>
+        </defs>
+        <rect x="4" y="4" width="212" height="112" rx="18" fill="url(#learnBg)" stroke="#1f2329" strokeWidth="4" />
+        <circle cx="36" cy="30" r="8" fill="#4e9de6" />
+        <circle cx="186" cy="92" r="10" fill="#ff8f53" />
+        <text
+          x="110"
+          y="82"
+          textAnchor="middle"
+          fontFamily="Verdana, sans-serif"
+          fontSize="72"
+          fontWeight="700"
+          fill="#5f5be2"
+        >
+          {letter}
+        </text>
+      </svg>
+    </div>
+  );
 }
 
 interface EggSpriteProps {

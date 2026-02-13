@@ -163,6 +163,7 @@ p {
 }
 
 .habitat-screen {
+  --ground-level: 10%;
   position: absolute;
   inset: 3.9rem 0.55rem 0.58rem;
   border-radius: 0.82rem;
@@ -189,7 +190,7 @@ p {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 17%;
+  bottom: var(--ground-level);
   border-top: 3px dashed rgba(47, 83, 49, 0.65);
 }
 
@@ -202,7 +203,7 @@ p {
 }
 
 .decor-plant {
-  bottom: calc(17% + 0.28rem);
+  bottom: calc(var(--ground-level) + 0.28rem);
   left: 0.65rem;
 }
 
@@ -214,7 +215,7 @@ p {
 .critter-zone {
   position: absolute;
   left: 50%;
-  bottom: calc(17% + 0.16rem);
+  bottom: calc(var(--ground-level) + 0.22rem);
   transform: translateX(-50%);
   z-index: 2;
   animation: pixel-bob 2.2s ease-in-out infinite;
@@ -297,10 +298,11 @@ p {
   color: #8a5a12;
 }
 
-.parent-lock,
-.status-mini-btn {
+.parent-lock {
   position: absolute;
-  top: 0.62rem;
+  left: 0.62rem;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 4;
   width: 42px;
   height: 42px;
@@ -310,14 +312,6 @@ p {
   display: grid;
   place-items: center;
   padding: 0;
-}
-
-.parent-lock {
-  left: 0.62rem;
-}
-
-.status-mini-btn {
-  right: 0.62rem;
 }
 
 .parent-lock.holding {
@@ -496,13 +490,32 @@ p {
 }
 
 .mirror-icon {
-  width: 104px;
-  height: 104px;
+  width: min(280px, 100%);
+  max-width: 100%;
+  min-height: 148px;
   border-radius: 1rem;
   border: var(--pixel-border);
   background: linear-gradient(180deg, #fff8df, #ffd8a8);
   display: grid;
   place-items: center;
+  padding: 0.35rem;
+}
+
+.mirror-illustration {
+  width: min(240px, 100%);
+  height: auto;
+  display: block;
+}
+
+.learn-target-card {
+  width: min(280px, 100%);
+  justify-self: center;
+}
+
+.learn-target-card svg {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .mirror-text {
