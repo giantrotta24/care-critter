@@ -1,5 +1,9 @@
 export type Stage = 'egg' | 'baby' | 'child' | 'teen' | 'adult';
 export type AdultVariant = 'A' | 'B' | 'C';
+export type EggStyle = 'speckled' | 'striped' | 'star' | 'leaf';
+export type CritterVariant = 'sunny' | 'stripe' | 'astro' | 'forest';
+export type PromptIconKey = 'meal' | 'snack' | 'play' | 'learn' | 'sleep';
+export type MirrorActionKey = 'feedMeal' | 'feedSnack' | 'play' | 'learn' | 'sleep';
 export type ConfirmMode = 'parent' | 'timer';
 export type AttentionReason = 'bored' | 'random' | null;
 
@@ -9,17 +13,19 @@ export interface AttentionDemand {
   ts: number;
 }
 
+export interface MirrorPromptConfig {
+  promptText: string;
+  promptIcon?: PromptIconKey;
+}
+
+export type PerActionPromptMap = Record<MirrorActionKey, MirrorPromptConfig>;
+
 export interface ParentSettings {
   mirrorEnabled: boolean;
+  hatchSoundEnabled: boolean;
   confirmMode: ConfirmMode;
   timerSeconds: number;
-  perActionPrompts: {
-    feedMeal: string;
-    feedSnack: string;
-    play: string;
-    learn: string;
-    sleep: string;
-  };
+  perActionPrompts: PerActionPromptMap;
   pauseDecay: boolean;
   sleepWindow: {
     start: string;
@@ -38,6 +44,8 @@ export interface GameState {
   happiness: number;
   training: number;
   weight: number;
+  eggStyle: EggStyle | null;
+  critterVariant: CritterVariant | null;
   stage: Stage;
   ageDays: number;
   asleep: boolean;
@@ -79,6 +87,7 @@ export type ActionType =
   | 'medicine'
   | 'praise'
   | 'scold'
+  | 'hatchEarly'
   | 'restart';
 
 export interface ActionOutcome {

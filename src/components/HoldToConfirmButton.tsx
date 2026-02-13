@@ -5,15 +5,19 @@ interface HoldToConfirmButtonProps {
   holdMs?: number;
   onConfirm: () => void;
   className?: string;
+  helperText?: string;
 }
 
 const TICK_MS = 40;
+const RING_RADIUS = 26;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 export function HoldToConfirmButton({
   label,
   holdMs = 2000,
   onConfirm,
-  className
+  className,
+  helperText
 }: HoldToConfirmButtonProps): JSX.Element {
   const [progress, setProgress] = useState(0);
   const intervalRef = useRef<number | null>(null);
@@ -42,6 +46,9 @@ export function HoldToConfirmButton({
 
       if (elapsed >= holdMs) {
         clearTimer();
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate(30);
+        }
         onConfirm();
       }
     }, TICK_MS);
@@ -56,8 +63,23 @@ export function HoldToConfirmButton({
       onPointerLeave={clearTimer}
       onPointerCancel={clearTimer}
     >
-      <span>{label}</span>
-      <span className="hold-progress" style={{ width: `${progress}%` }} />
+      <span className="hold-ring" aria-hidden="true">
+        <svg viewBox="0 0 64 64" role="presentation">
+          <circle className="hold-ring-track" cx="32" cy="32" r={RING_RADIUS} />
+          <circle
+            className="hold-ring-progress"
+            cx="32"
+            cy="32"
+            r={RING_RADIUS}
+            strokeDasharray={RING_CIRCUMFERENCE}
+            strokeDashoffset={RING_CIRCUMFERENCE - (progress / 100) * RING_CIRCUMFERENCE}
+          />
+        </svg>
+      </span>
+      <span className="hold-text-wrap">
+        <strong>{label}</strong>
+        {helperText ? <small>{helperText}</small> : null}
+      </span>
     </button>
   );
 }

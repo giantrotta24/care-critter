@@ -1,9 +1,11 @@
+import { EGG_TO_VARIANT } from './constants';
 import { applyActionReward, applyTimeDecay } from './engine';
-import type { ActionOutcome, ActionType, GameState, ParentSettings } from './types';
+import type { ActionOutcome, ActionType, EggStyle, GameState, ParentSettings } from './types';
 
 export type GameReducerAction =
   | { type: 'tick'; nowTs: number }
   | { type: 'applyAction'; actionType: ActionType; outcome?: ActionOutcome; nowTs: number }
+  | { type: 'setEggStyle'; eggStyle: EggStyle; nowTs: number }
   | { type: 'setSettings'; settings: ParentSettings; nowTs: number }
   | { type: 'importState'; state: GameState; nowTs: number };
 
@@ -33,6 +35,16 @@ export function gameReducer(state: GameState, action: GameReducerAction): GameSt
       return {
         ...decayed,
         settings: action.settings,
+        lastUpdateTs: action.nowTs
+      };
+    }
+    case 'setEggStyle': {
+      const delta = elapsedMinutes(state.lastUpdateTs, action.nowTs);
+      const decayed = applyTimeDecay(state, delta, action.nowTs);
+      return {
+        ...decayed,
+        eggStyle: action.eggStyle,
+        critterVariant: EGG_TO_VARIANT[action.eggStyle],
         lastUpdateTs: action.nowTs
       };
     }

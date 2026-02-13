@@ -4,6 +4,7 @@ import {
   CAPS,
   DECAY,
   DEFAULT_SETTINGS,
+  EGG_TO_VARIANT,
   GAME_LOOP,
   POOP,
   REWARDS,
@@ -18,6 +19,7 @@ import type {
   ActionType,
   AdultVariant,
   CareScoreSnapshot,
+  CritterVariant,
   GameState,
   ParentSettings,
   Stage
@@ -74,6 +76,18 @@ function nextStage(current: Stage): Stage | null {
   return STAGE_ORDER[index + 1];
 }
 
+function resolveCritterVariant(state: GameState): CritterVariant {
+  if (state.critterVariant) {
+    return state.critterVariant;
+  }
+
+  if (state.eggStyle) {
+    return EGG_TO_VARIANT[state.eggStyle];
+  }
+
+  return 'sunny';
+}
+
 function withSnapshot(state: GameState, nowTs: number): GameState {
   if (nowTs - state.lastCareSnapshotTs < GAME_LOOP.careSnapshotMinutes * 60000) {
     return state;
@@ -123,6 +137,8 @@ export function createInitialState(
     happiness: 70,
     training: 30,
     weight: 8,
+    eggStyle: null,
+    critterVariant: null,
     stage: 'egg',
     ageDays: 0,
     asleep: false,
@@ -170,6 +186,13 @@ export function advanceStageIfNeeded(state: GameState, nowTs: number): GameState
       stage: upcoming,
       stageStartedTs: next.stageStartedTs + duration
     };
+
+    if (upcoming === 'baby') {
+      next = {
+        ...next,
+        critterVariant: resolveCritterVariant(next)
+      };
+    }
 
     if (upcoming === 'adult') {
       const history = trimHistory(next.careScoreHistory, nowTs);
@@ -481,6 +504,39 @@ export function applyActionReward(
         next = {
           ...next,
           happiness: clamp(next.happiness + SCOLD.unnecessary.happiness)
+        };
+      }
+      break;
+    }
+    case 'hatchEarly': {
+      if (next.stage === 'adult') {
+        break;
+      }
+
+      const upcoming = next.stage === 'egg' ? 'baby' : nextStage(next.stage);
+      if (!upcoming) {
+        break;
+      }
+
+      next = {
+        ...next,
+        stage: upcoming,
+        stageStartedTs: nowTs
+      };
+
+      if (upcoming === 'baby') {
+        next = {
+          ...next,
+          critterVariant: resolveCritterVariant(next)
+        };
+      }
+
+      if (upcoming === 'adult') {
+        const history = trimHistory(next.careScoreHistory, nowTs);
+        const careScore = averageCareScore(history);
+        next = {
+          ...next,
+          adultVariant: resolveAdultVariant(careScore)
         };
       }
       break;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { STORAGE_KEY } from '../src/game/constants';
 import { createInitialState } from '../src/game/engine';
 import { loadState, saveState, type StorageAdapter } from '../src/game/storage';
 
@@ -25,5 +26,37 @@ describe('storage round-trip', () => {
     const loaded = loadState(adapter, nowTs + 1000);
 
     expect(loaded).toEqual(state);
+  });
+
+  it('migrates legacy prompt strings and adds egg defaults', () => {
+    const nowTs = new Date('2026-02-10T10:00:00').getTime();
+    const adapter = memoryAdapter();
+    const state = createInitialState(nowTs, undefined, () => 0.5);
+
+    const legacyPayload = {
+      ...state,
+      settings: {
+        ...state.settings,
+        perActionPrompts: {
+          feedMeal: 'Take one bite.',
+          feedSnack: 'One healthy snack bite.',
+          play: 'Jump five times.',
+          learn: 'Say one letter.',
+          sleep: 'Pajamas and bed.'
+        }
+      }
+    } as Record<string, unknown>;
+
+    delete legacyPayload.eggStyle;
+    delete legacyPayload.critterVariant;
+
+    adapter.setItem(STORAGE_KEY, JSON.stringify(legacyPayload));
+
+    const loaded = loadState(adapter, nowTs + 1000);
+
+    expect(loaded.eggStyle).toBe('speckled');
+    expect(loaded.critterVariant).toBe('sunny');
+    expect(loaded.settings.perActionPrompts.feedMeal.promptText).toBe('Take one bite.');
+    expect(loaded.settings.perActionPrompts.feedMeal.promptIcon).toBe('meal');
   });
 });
