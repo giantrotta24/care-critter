@@ -1,9 +1,17 @@
-import type { JSX, MutableRefObject, PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type JSX,
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent
+} from 'react';
 import type {
   CritterMood,
   DockAction,
   HatchPhase,
-  PromptSuccessCue
+  PromptSuccessCue,
+  TickleCue
 } from '../../app/model';
 import { isNight } from '../../app/model';
 import type { EggStyle, GameState } from '../../game/types';
@@ -49,11 +57,15 @@ interface GameShellProps {
   sleepAudioRef: MutableRefObject<HTMLAudioElement | null>;
   onShowStatusSheet: () => void;
   onHabitatTap: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onTickleCritter: () => void;
   onStartParentGateHold: () => void;
   onStopParentGateHold: () => void;
   onDockAction: (action: DockAction) => void;
   onDismissParentHint: () => void;
+  tickleCue: TickleCue | null;
 }
+
+const STAR_EARNED_ANIMATION_MS = 760;
 
 export function GameShell({
   state,
@@ -87,11 +99,73 @@ export function GameShell({
   sleepAudioRef,
   onShowStatusSheet,
   onHabitatTap,
+  onTickleCritter,
   onStartParentGateHold,
   onStopParentGateHold,
   onDockAction,
-  onDismissParentHint
+  onDismissParentHint,
+  tickleCue
 }: GameShellProps): JSX.Element {
+  const previousStarsRef = useRef(starsFilled);
+  const earnedStarTimersRef = useRef<number[]>([]);
+  const [earnedStarTicks, setEarnedStarTicks] = useState<Record<number, number>>({});
+
+  const clearEarnedStarTimers = (): void => {
+    earnedStarTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    earnedStarTimersRef.current = [];
+  };
+
+  useEffect(() => {
+    const previousStars = previousStarsRef.current;
+
+    if (starsFilled < previousStars) {
+      clearEarnedStarTimers();
+      setEarnedStarTicks({});
+      previousStarsRef.current = starsFilled;
+      return;
+    }
+
+    if (starsFilled > previousStars) {
+      const gainedIndices = Array.from(
+        { length: starsFilled - previousStars },
+        (_, offset) => previousStars + offset
+      );
+      const tickBase = Date.now();
+
+      setEarnedStarTicks((current) => {
+        const next = { ...current };
+        gainedIndices.forEach((index, offset) => {
+          next[index] = tickBase + offset;
+        });
+        return next;
+      });
+
+      gainedIndices.forEach((index) => {
+        const timerId = window.setTimeout(() => {
+          setEarnedStarTicks((current) => {
+            if (current[index] === undefined) {
+              return current;
+            }
+
+            const next = { ...current };
+            delete next[index];
+            return next;
+          });
+        }, STAR_EARNED_ANIMATION_MS);
+
+        earnedStarTimersRef.current.push(timerId);
+      });
+    }
+
+    previousStarsRef.current = starsFilled;
+  }, [starsFilled]);
+
+  useEffect(() => {
+    return () => {
+      clearEarnedStarTimers();
+    };
+  }, []);
+
   return (
     <div className="app-shell">
       <main className="main-view">
@@ -192,9 +266,13 @@ export function GameShell({
               )}
 
               <div
-                className={`critter-zone ${state.asleep ? 'asleep' : ''} ${hatchPhase === 'pop' ? 'hatch-pop' : ''} ${isCelebrating ? 'celebrate' : ''} ${isCurious ? 'curious' : ''} ${isModeling ? `modeling ${modelClass}` : ''}`}
+                className={`critter-zone ${state.asleep ? 'asleep' : ''} ${hatchPhase === 'pop' ? 'hatch-pop' : ''} ${isCelebrating ? 'celebrate' : ''} ${isCurious ? 'curious' : ''} ${isModeling ? `modeling ${modelClass}` : ''} ${tickleCue ? `tickle-${tickleCue.tone}` : ''}`}
                 style={{ left: `${critterX}%` }}
                 aria-live="polite"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  onTickleCritter();
+                }}
               >
                 {isModeling && (
                   <div className="critter-speech modeling" role="status" aria-live="polite">
@@ -211,6 +289,12 @@ export function GameShell({
                       {promptSuccessCue.text}
                     </p>
                     <p className="critter-speech-sub">You did it!</p>
+                  </div>
+                )}
+                {!isModeling && !promptSuccessCue && tickleCue && (
+                  <div key={tickleCue.tick} className={`critter-speech tickle ${tickleCue.tone}`} role="status" aria-live="polite">
+                    <p className="critter-speech-main">{tickleCue.text}</p>
+                    <p className="critter-speech-sub">{tickleCue.subText}</p>
                   </div>
                 )}
                 {isCelebrating && <SparkleBurst large={starRowBurst} />}
@@ -243,8 +327,8 @@ export function GameShell({
             <div className="star-row" aria-label={`${starsFilled} of 5 stars`}>
               {Array.from({ length: 5 }).map((_, index) => (
                 <span
-                  key={`star-${index}`}
-                  className={`star-slot ${index < starsFilled ? 'filled' : ''}`}
+                  key={`star-${index}-${earnedStarTicks[index] ?? 'base'}`}
+                  className={`star-slot ${index < starsFilled ? 'filled' : ''} ${earnedStarTicks[index] ? 'earned' : ''}`}
                   aria-hidden="true"
                 >
                   ★

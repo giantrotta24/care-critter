@@ -108,4 +108,22 @@ describe('stage progression', () => {
     expect(next.stage).toBe('adult');
     expect(['A', 'B', 'C']).toContain(next.adultVariant);
   });
+
+  it('supports configurable egg hatch duration from parent settings', () => {
+    const start = new Date('2026-02-10T10:00:00').getTime();
+    const state = {
+      ...createInitialState(start, undefined, () => 0.5),
+      eggStyle: 'speckled' as const,
+      settings: {
+        ...createInitialState(start).settings,
+        eggHatchSeconds: 60
+      }
+    };
+
+    const tooSoon = applyTimeDecay(state, 0.9, start + 54_000, () => 0.5);
+    const hatched = applyTimeDecay(state, 1.1, start + 66_000, () => 0.5);
+
+    expect(tooSoon.stage).toBe('egg');
+    expect(hatched.stage).toBe('baby');
+  });
 });

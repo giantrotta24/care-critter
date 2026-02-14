@@ -56,6 +56,7 @@ describe('storage round-trip', () => {
 
     expect(loaded.eggStyle).toBe('speckled');
     expect(loaded.critterVariant).toBe('sunny');
+    expect(loaded.settings.eggHatchSeconds).toBe(300);
     expect(loaded.settings.perActionPrompts.feedMeal.promptText).toBe('Take one bite.');
     expect(loaded.settings.perActionPrompts.feedMeal.promptIcon).toBe('meal');
   });

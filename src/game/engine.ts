@@ -4,6 +4,7 @@ import {
   CAPS,
   DECAY,
   DEFAULT_SETTINGS,
+  EGG_HATCH,
   EGG_TO_VARIANT,
   GAME_LOOP,
   POOP,
@@ -27,6 +28,35 @@ import type {
 
 function clamp(value: number, min = CAPS.minMeter, max = CAPS.maxMeter): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeEggHatchSeconds(value: unknown): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return EGG_HATCH.defaultSeconds;
+  }
+
+  return Math.max(
+    EGG_HATCH.minSeconds,
+    Math.min(EGG_HATCH.maxSeconds, Math.round(value))
+  );
+}
+
+function normalizeParentSettings(settings: ParentSettings): ParentSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    sleepWindow: {
+      ...DEFAULT_SETTINGS.sleepWindow,
+      ...settings.sleepWindow
+    },
+    perActionPrompts: {
+      ...DEFAULT_SETTINGS.perActionPrompts,
+      ...settings.perActionPrompts
+    },
+    eggHatchSeconds: normalizeEggHatchSeconds(
+      (settings as { eggHatchSeconds?: unknown }).eggHatchSeconds
+    )
+  };
 }
 
 function randomBetween(min: number, max: number, rng: () => number): number {
@@ -74,6 +104,17 @@ function nextStage(current: Stage): Stage | null {
     return null;
   }
   return STAGE_ORDER[index + 1];
+}
+
+function stageDurationMs(state: GameState): number {
+  if (state.stage === 'egg') {
+    const seconds = normalizeEggHatchSeconds(
+      (state.settings as { eggHatchSeconds?: unknown }).eggHatchSeconds
+    );
+    return seconds * 1000;
+  }
+
+  return STAGE_DURATIONS_MS[state.stage];
 }
 
 function resolveCritterVariant(state: GameState): CritterVariant {
@@ -133,6 +174,7 @@ export function createInitialState(
   rng: () => number = Math.random
 ): GameState {
   const baseDate = toIsoDate(nowTs);
+  const normalizedSettings = normalizeParentSettings(settings);
 
   return {
     hunger: 70,
@@ -157,7 +199,7 @@ export function createInitialState(
     careScoreHistory: [{ ts: nowTs, score: 56.67 }],
     adultVariant: 'C',
     attentionDemand: { active: false, reason: null, ts: nowTs },
-    settings,
+    settings: normalizedSettings,
     stageStartedTs: nowTs,
     createdTs: nowTs,
     poopProgressMinutes: 0,
@@ -174,7 +216,7 @@ export function advanceStageIfNeeded(state: GameState, nowTs: number): GameState
   let next = state;
 
   while (true) {
-    const duration = STAGE_DURATIONS_MS[next.stage];
+    const duration = stageDurationMs(next);
     if (duration === Number.POSITIVE_INFINITY) {
       break;
     }

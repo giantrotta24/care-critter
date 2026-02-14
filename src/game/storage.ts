@@ -1,4 +1,10 @@
-import { DEFAULT_PROMPT_ICONS, EGG_TO_VARIANT, EGG_STYLES, STORAGE_KEY } from './constants';
+import {
+  DEFAULT_PROMPT_ICONS,
+  EGG_HATCH,
+  EGG_TO_VARIANT,
+  EGG_STYLES,
+  STORAGE_KEY
+} from './constants';
 import { createInitialState } from './engine';
 import type { GameState } from './types';
 
@@ -107,6 +113,17 @@ function normalizeCount(value: unknown, fallback = 0): number {
   return Math.max(0, Math.round(value));
 }
 
+function normalizeEggHatchSeconds(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return fallback;
+  }
+
+  return Math.max(
+    EGG_HATCH.minSeconds,
+    Math.min(EGG_HATCH.maxSeconds, Math.round(value))
+  );
+}
+
 export function loadState(
   adapter: StorageAdapter = localStorageAdapter,
   nowTs = Date.now()
@@ -129,6 +146,10 @@ export function loadState(
       settings: {
         ...base.settings,
         ...(isRecord(parsed.settings) ? parsed.settings : {}),
+        eggHatchSeconds: normalizeEggHatchSeconds(
+          isRecord(parsed.settings) ? parsed.settings.eggHatchSeconds : undefined,
+          base.settings.eggHatchSeconds
+        ),
         perActionPrompts: normalizePerActionPrompts(
           base.settings.perActionPrompts,
           isRecord(parsed.settings) ? parsed.settings.perActionPrompts : undefined

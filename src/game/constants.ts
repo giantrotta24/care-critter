@@ -63,8 +63,14 @@ export const GAME_LOOP = {
   careSnapshotMinutes: 10
 } as const;
 
+export const EGG_HATCH = {
+  defaultSeconds: 5 * 60,
+  minSeconds: 15,
+  maxSeconds: 60 * 60
+} as const;
+
 export const STAGE_DURATIONS_MS: Record<Stage, number> = {
-  egg: 5 * 60 * 1000,
+  egg: EGG_HATCH.defaultSeconds * 1000,
   baby: 24 * 60 * 60 * 1000,
   child: 2 * 24 * 60 * 60 * 1000,
   teen: 2 * 24 * 60 * 60 * 1000,
@@ -93,6 +99,7 @@ export const DEFAULT_SETTINGS: ParentSettings = {
   hatchSoundEnabled: false,
   confirmMode: 'parent',
   timerSeconds: 10,
+  eggHatchSeconds: EGG_HATCH.defaultSeconds,
   perActionPrompts: {
     feedMeal: {
       promptText: 'Take one bite at the table.',

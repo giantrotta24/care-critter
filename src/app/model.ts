@@ -10,6 +10,7 @@ export type ConfirmAction = 'restart' | 'hatchEarly' | null;
 export type DockIcon = PromptIconKey | 'lock';
 export type CritterMood = 'neutral' | 'modeling' | 'curious' | 'celebrating';
 export type HatchPhase = 'idle' | 'shake' | 'crack' | 'pop';
+export type TickleTone = 'playful' | 'grumpy';
 
 export interface ParentChallenge {
   a: number;
@@ -30,6 +31,13 @@ export interface PlayRound {
 export interface PromptSuccessCue {
   icon: PromptIconKey;
   text: string;
+}
+
+export interface TickleCue {
+  tone: TickleTone;
+  text: string;
+  subText: string;
+  tick: number;
 }
 
 export const MODELING_DURATION_MS = 920;

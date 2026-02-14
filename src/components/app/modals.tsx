@@ -12,7 +12,7 @@ import {
   type PlayRound,
   type Side
 } from '../../app/model';
-import { DEFAULT_PROMPT_ICONS } from '../../game/constants';
+import { DEFAULT_PROMPT_ICONS, EGG_HATCH } from '../../game/constants';
 import type { ActionType, GameState, ParentSettings, PromptIconKey } from '../../game/types';
 import { LearnTargetCard, MirrorCueArt } from './visuals';
 import { TimerConfirm } from './TimerConfirm';
@@ -407,6 +407,27 @@ export function ParentPanelModal({
             />
           </label>
         )}
+
+        <label className="field-label">
+          Egg hatch seconds
+          <input
+            className="text-input"
+            type="number"
+            min={EGG_HATCH.minSeconds}
+            max={EGG_HATCH.maxSeconds}
+            value={settingsDraft.eggHatchSeconds}
+            onChange={(event) =>
+              setSettingsDraft((current) => ({
+                ...current,
+                eggHatchSeconds: Math.max(
+                  EGG_HATCH.minSeconds,
+                  Math.min(EGG_HATCH.maxSeconds, Number(event.target.value) || EGG_HATCH.defaultSeconds)
+                )
+              }))
+            }
+          />
+          <small>Set how long the egg stage lasts (for example 60 = 1 minute).</small>
+        </label>
 
         <div className="listening-summary">
           <p>Great listening today: {state.successfulMirrorsToday} times</p>

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import {
   EGG_META,
   MODEL_CLASS_BY_INTENT,
@@ -16,12 +23,13 @@ import {
   type Intent,
   type LearnRound,
   type PlayRound,
-  type Side
-} from './app/model';
-import { useCritterMotion } from './app/hooks/useCritterMotion';
-import { useMirrorFlow } from './app/hooks/useMirrorFlow';
-import { useParentGate } from './app/hooks/useParentGate';
-import { GameShell } from './components/app/GameShell';
+  type Side,
+  type TickleCue,
+} from "./app/model";
+import { useCritterMotion } from "./app/hooks/useCritterMotion";
+import { useMirrorFlow } from "./app/hooks/useMirrorFlow";
+import { useParentGate } from "./app/hooks/useParentGate";
+import { GameShell } from "./components/app/GameShell";
 import {
   ConfirmActionModal,
   FeedModal,
@@ -30,20 +38,20 @@ import {
   ParentChallengeModal,
   ParentPanelModal,
   PlayModal,
-  StatusModal
-} from './components/app/modals';
-import { DeadScreen, EggSelectionScreen } from './components/app/screens';
-import { CAPS, GAME_LOOP } from './game/constants';
-import { gameReducer } from './game/reducer';
-import { loadState, saveState, type StorageAdapter } from './game/storage';
-import { canSleepNow, toIsoDate } from './game/time';
+  StatusModal,
+} from "./components/app/modals";
+import { DeadScreen, EggSelectionScreen } from "./components/app/screens";
+import { CAPS, GAME_LOOP } from "./game/constants";
+import { gameReducer } from "./game/reducer";
+import { loadState, saveState, type StorageAdapter } from "./game/storage";
+import { canSleepNow, toIsoDate } from "./game/time";
 import type {
   ActionType,
   EggStyle,
   GameState,
   ParentSettings,
-  PromptIconKey
-} from './game/types';
+  PromptIconKey,
+} from "./game/types";
 
 export default function App(): JSX.Element {
   const [state, dispatch] = useReducer(gameReducer, undefined, initGameState);
@@ -56,24 +64,28 @@ export default function App(): JSX.Element {
   const starAudioRef = useRef<HTMLAudioElement | null>(null);
   const sleepAudioRef = useRef<HTMLAudioElement | null>(null);
   const starRowTimerRef = useRef<number | null>(null);
+  const tickleTimerRef = useRef<number | null>(null);
 
   const [showFeedSheet, setShowFeedSheet] = useState(false);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState("");
 
   const [playRound, setPlayRound] = useState<PlayRound | null>(null);
   const [learnRound, setLearnRound] = useState<LearnRound | null>(null);
 
   const [showParentPanel, setShowParentPanel] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
-  const [settingsDraft, setSettingsDraft] = useState<ParentSettings>(state.settings);
-  const [exportText, setExportText] = useState('');
-  const [importText, setImportText] = useState('');
+  const [settingsDraft, setSettingsDraft] = useState<ParentSettings>(
+    state.settings,
+  );
+  const [exportText, setExportText] = useState("");
+  const [importText, setImportText] = useState("");
 
   const [clockTs, setClockTs] = useState(Date.now());
-  const [hatchPhase, setHatchPhase] = useState<HatchPhase>('idle');
-  const [hatchEggStyle, setHatchEggStyle] = useState<EggStyle>('speckled');
+  const [hatchPhase, setHatchPhase] = useState<HatchPhase>("idle");
+  const [hatchEggStyle, setHatchEggStyle] = useState<EggStyle>("speckled");
   const [starRowBurst, setStarRowBurst] = useState(false);
+  const [tickleCue, setTickleCue] = useState<TickleCue | null>(null);
 
   const clearHatchTimers = (): void => {
     hatchTimersRef.current.forEach((id) => window.clearTimeout(id));
@@ -87,8 +99,15 @@ export default function App(): JSX.Element {
     }
   };
 
-  const setCurrentPhase = (phase: GameState['currentPhase']): void => {
-    dispatch({ type: 'setCurrentPhase', phase });
+  const clearTickleTimer = (): void => {
+    if (tickleTimerRef.current) {
+      window.clearTimeout(tickleTimerRef.current);
+      tickleTimerRef.current = null;
+    }
+  };
+
+  const setCurrentPhase = (phase: GameState["currentPhase"]): void => {
+    dispatch({ type: "setCurrentPhase", phase });
   };
 
   const playEffectSound = (audio: HTMLAudioElement | null): void => {
@@ -110,77 +129,80 @@ export default function App(): JSX.Element {
     setToast(message);
   };
 
-  const snacksUsedToday = state.lastSnackResetDate === toIsoDate(Date.now()) ? state.snackCountToday : 0;
+  const snacksUsedToday =
+    state.lastSnackResetDate === toIsoDate(Date.now())
+      ? state.snackCountToday
+      : 0;
   const snacksRemaining = Math.max(0, CAPS.snackPerDay - snacksUsedToday);
 
   const doAction = (actionType: ActionType): void => {
-    dispatch({ type: 'applyAction', actionType, nowTs: Date.now() });
+    dispatch({ type: "applyAction", actionType, nowTs: Date.now() });
   };
 
   const continueIntent = (intent: Intent, fromMirrorPrompt = false): void => {
-    if (intent === 'feedMeal') {
-      doAction('feedMeal');
+    if (intent === "feedMeal") {
+      doAction("feedMeal");
       setShowFeedSheet(false);
       if (!fromMirrorPrompt) {
-        showMessage('Meal complete. Great care!');
+        showMessage("Meal complete. Great care!");
       }
       return;
     }
 
-    if (intent === 'feedSnack') {
+    if (intent === "feedSnack") {
       if (snacksRemaining <= 0) {
-        showMessage('Too many snacks today. Try Play or Learn.');
+        showMessage("Too many snacks today. Try Play or Learn.");
         return;
       }
 
-      doAction('feedSnack');
+      doAction("feedSnack");
       setShowFeedSheet(false);
       if (!fromMirrorPrompt) {
-        showMessage('Snack time complete.');
+        showMessage("Snack time complete.");
       }
       return;
     }
 
-    if (intent === 'play') {
+    if (intent === "play") {
       setPlayRound({
         target: randomSide(),
-        expiresAt: Date.now() + 15000
+        expiresAt: Date.now() + 15000,
       });
       return;
     }
 
-    if (intent === 'learn') {
+    if (intent === "learn") {
       setLearnRound(makeLearnRound());
       return;
     }
 
-    if (intent === 'sleep') {
+    if (intent === "sleep") {
       if (state.asleep) {
-        doAction('wake');
-        showMessage('Your pet woke up.');
+        doAction("wake");
+        showMessage("Your pet woke up.");
         return;
       }
 
       const allowed = canSleepNow(
         Date.now(),
         state.settings.sleepWindow,
-        state.settings.parentOverrideSleep
+        state.settings.parentOverrideSleep,
       );
 
       if (!allowed) {
-        showMessage('Sleep is outside the current sleep window.');
+        showMessage("Sleep is outside the current sleep window.");
         return;
       }
 
       dispatch({
-        type: 'applyAction',
-        actionType: 'sleep',
+        type: "applyAction",
+        actionType: "sleep",
         nowTs: Date.now(),
-        outcome: { allowSleep: true }
+        outcome: { allowSleep: true },
       });
       playEffectSound(sleepAudioRef.current);
       if (!fromMirrorPrompt) {
-        showMessage('Bedtime started.');
+        showMessage("Bedtime started.");
       }
     }
   };
@@ -193,18 +215,18 @@ export default function App(): JSX.Element {
     resolveMirrorDone,
     cancelMirror,
     resetMirrorFlow,
-    onTimerReadyChange
+    onTimerReadyChange,
   } = useMirrorFlow({
     settings: state.settings,
     setCurrentPhase,
     recordMirrorSuccess: () => {
-      dispatch({ type: 'recordMirrorSuccess', nowTs: Date.now() });
+      dispatch({ type: "recordMirrorSuccess", nowTs: Date.now() });
     },
     continueIntent,
     showMessage,
     modelAudioRef,
     successAudioRef,
-    starAudioRef
+    starAudioRef,
   });
 
   const {
@@ -219,10 +241,10 @@ export default function App(): JSX.Element {
     stopParentGateHold,
     setChallengeAnswer,
     closeParentChallenge,
-    submitParentChallenge
+    submitParentChallenge,
   } = useParentGate({
     onUnlock: () => setShowParentPanel(true),
-    showMessage
+    showMessage,
   });
 
   const {
@@ -231,13 +253,13 @@ export default function App(): JSX.Element {
     prefersReducedMotion,
     groundTapActive,
     groundTapFx,
-    handleHabitatTap
+    handleHabitatTap,
   } = useCritterMotion({
     stage: state.stage,
     dead: state.dead,
     asleep: state.asleep,
     currentPhase: state.currentPhase,
-    hatchPhase
+    hatchPhase,
   });
 
   useEffect(() => {
@@ -246,7 +268,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const tickId = window.setInterval(() => {
-      dispatch({ type: 'tick', nowTs: Date.now() });
+      dispatch({ type: "tick", nowTs: Date.now() });
     }, GAME_LOOP.tickSeconds * 1000);
 
     return () => {
@@ -282,6 +304,7 @@ export default function App(): JSX.Element {
     return () => {
       clearHatchTimers();
       clearStarRowTimer();
+      clearTickleTimer();
     };
   }, []);
 
@@ -290,16 +313,16 @@ export default function App(): JSX.Element {
       return;
     }
 
-    const id = window.setTimeout(() => setToast(''), 2600);
+    const id = window.setTimeout(() => setToast(""), 2600);
     return () => window.clearTimeout(id);
   }, [toast]);
 
   useEffect(() => {
     const mirrorImages = [
-      '/prompt-cues/feed-meal.jpeg',
-      '/prompt-cues/feed-snack.jpeg',
-      '/prompt-cues/play-action.jpeg',
-      '/prompt-cues/sleep-action.jpeg'
+      "/prompt-cues/feed-meal.jpeg",
+      "/prompt-cues/feed-snack.jpeg",
+      "/prompt-cues/play-action.jpeg",
+      "/prompt-cues/sleep-action.jpeg",
     ];
 
     mirrorImages.forEach((src) => {
@@ -309,7 +332,13 @@ export default function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    [hatchAudioRef.current, modelAudioRef.current, successAudioRef.current, starAudioRef.current, sleepAudioRef.current]
+    [
+      hatchAudioRef.current,
+      modelAudioRef.current,
+      successAudioRef.current,
+      starAudioRef.current,
+      sleepAudioRef.current,
+    ]
       .filter((audio): audio is HTMLAudioElement => audio !== null)
       .forEach((audio) => {
         audio.load();
@@ -322,48 +351,65 @@ export default function App(): JSX.Element {
     }
   }, [showParentPanel, state.settings]);
 
-  const playSecondsLeft = playRound ? Math.max(0, Math.ceil((playRound.expiresAt - clockTs) / 1000)) : 0;
-  const learnSecondsLeft = learnRound ? Math.max(0, Math.ceil((learnRound.expiresAt - clockTs) / 1000)) : 0;
+  const playSecondsLeft = playRound
+    ? Math.max(0, Math.ceil((playRound.expiresAt - clockTs) / 1000))
+    : 0;
+  const learnSecondsLeft = learnRound
+    ? Math.max(0, Math.ceil((learnRound.expiresAt - clockTs) / 1000))
+    : 0;
 
   useEffect(() => {
     if (playRound && playSecondsLeft <= 0) {
-      dispatch({ type: 'applyAction', actionType: 'playLoss', nowTs: Date.now() });
+      dispatch({
+        type: "applyAction",
+        actionType: "playLoss",
+        nowTs: Date.now(),
+      });
       setPlayRound(null);
-      setToast('Time is up. Great try!');
+      setToast("Time is up. Great try!");
     }
   }, [playRound, playSecondsLeft]);
 
   useEffect(() => {
     if (learnRound && learnSecondsLeft <= 0) {
-      dispatch({ type: 'applyAction', actionType: 'learnWrong', nowTs: Date.now() });
+      dispatch({
+        type: "applyAction",
+        actionType: "learnWrong",
+        nowTs: Date.now(),
+      });
       setLearnRound(null);
-      setToast('Time is up. Let us try another letter!');
+      setToast("Time is up. Let us try another letter!");
     }
   }, [learnRound, learnSecondsLeft]);
 
   useEffect(() => {
     const previousStage = previousStageRef.current;
 
-    if (previousStage === 'egg' && state.stage === 'baby') {
-      setHatchEggStyle(state.eggStyle ?? 'speckled');
+    if (previousStage === "egg" && state.stage === "baby") {
+      setHatchEggStyle(state.eggStyle ?? "speckled");
       clearHatchTimers();
       playHatchSound();
 
       if (prefersReducedMotion) {
-        setHatchPhase('pop');
-        const end = window.setTimeout(() => setHatchPhase('idle'), 260);
+        setHatchPhase("pop");
+        const end = window.setTimeout(() => setHatchPhase("idle"), 260);
         hatchTimersRef.current = [end];
       } else {
-        setHatchPhase('shake');
-        const crack = window.setTimeout(() => setHatchPhase('crack'), 420);
-        const pop = window.setTimeout(() => setHatchPhase('pop'), 760);
-        const end = window.setTimeout(() => setHatchPhase('idle'), 1080);
+        setHatchPhase("shake");
+        const crack = window.setTimeout(() => setHatchPhase("crack"), 420);
+        const pop = window.setTimeout(() => setHatchPhase("pop"), 760);
+        const end = window.setTimeout(() => setHatchPhase("idle"), 1080);
         hatchTimersRef.current = [crack, pop, end];
       }
     }
 
     previousStageRef.current = state.stage;
-  }, [state.stage, state.eggStyle, prefersReducedMotion, state.settings.hatchSoundEnabled]);
+  }, [
+    state.stage,
+    state.eggStyle,
+    prefersReducedMotion,
+    state.settings.hatchSoundEnabled,
+  ]);
 
   useEffect(() => {
     if (state.starsToday < 5 || starRowBurst) {
@@ -374,7 +420,7 @@ export default function App(): JSX.Element {
     playEffectSound(successAudioRef.current);
     clearStarRowTimer();
     starRowTimerRef.current = window.setTimeout(() => {
-      dispatch({ type: 'resetStarsToday' });
+      dispatch({ type: "resetStarsToday" });
       setStarRowBurst(false);
       starRowTimerRef.current = null;
     }, STAR_ROW_BURST_MS);
@@ -383,8 +429,8 @@ export default function App(): JSX.Element {
   const mirrorPrompt = useMemo(() => {
     if (!activeIntent) {
       return {
-        promptText: '',
-        promptIcon: 'meal' as PromptIconKey
+        promptText: "",
+        promptIcon: "meal" as PromptIconKey,
       };
     }
 
@@ -393,57 +439,109 @@ export default function App(): JSX.Element {
 
     return {
       promptText: configured.promptText,
-      promptIcon: configured.promptIcon ?? defaultPromptIconForIntent(activeIntent)
+      promptIcon:
+        configured.promptIcon ?? defaultPromptIconForIntent(activeIntent),
     };
   }, [activeIntent, state.settings.perActionPrompts]);
 
-  const isModeling = state.currentPhase === 'modeling' && Boolean(activeIntent);
-  const isMirrorPhase = state.currentPhase === 'mirror' && Boolean(activeIntent);
-  const isCelebrating = state.currentPhase === 'celebrating';
+  const isModeling = state.currentPhase === "modeling" && Boolean(activeIntent);
+  const isMirrorPhase =
+    state.currentPhase === "mirror" && Boolean(activeIntent);
+  const isCelebrating = state.currentPhase === "celebrating";
   const isCurious = isMirrorPhase && timerWaiting;
   const critterMood: CritterMood = isCelebrating
-    ? 'celebrating'
+    ? "celebrating"
     : isModeling
-      ? 'modeling'
+      ? "modeling"
       : isCurious
-        ? 'curious'
-        : 'neutral';
-  const modelClass = activeIntent ? MODEL_CLASS_BY_INTENT[activeIntent] : '';
+        ? "curious"
+        : "neutral";
+  const modelClass = activeIntent ? MODEL_CLASS_BY_INTENT[activeIntent] : "";
   const starsFilled = Math.max(0, Math.min(5, state.starsToday));
-  const actionFlowBusy = state.currentPhase !== 'idle';
+  const actionFlowBusy = state.currentPhase !== "idle";
 
-  const needsEggSelection = state.stage === 'egg' && state.eggStyle === null;
+  const needsEggSelection = state.stage === "egg" && state.eggStyle === null;
 
   const clockLabel = new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit'
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(clockTs);
 
   const stageDisplayLabel = stageLabel(state);
 
+  const showTickleCue = (
+    tone: TickleCue["tone"],
+    text: string,
+    subText: string,
+  ): void => {
+    clearTickleTimer();
+    setTickleCue({
+      tone,
+      text,
+      subText,
+      tick: Date.now(),
+    });
+
+    tickleTimerRef.current = window.setTimeout(() => {
+      setTickleCue(null);
+      tickleTimerRef.current = null;
+    }, 2000);
+  };
+
+  const handleCritterTickle = (): void => {
+    if (state.stage === "egg") {
+      showTickleCue("playful", "*wiggle wiggle*", "Tiny egg giggles!");
+      return;
+    }
+
+    const careScore = (state.hunger + state.happiness + state.training) / 3;
+    const needsCareSoon =
+      state.sickness ||
+      state.asleep ||
+      state.attentionDemand.active ||
+      state.currentPhase !== "idle" ||
+      state.hunger < 35 ||
+      state.happiness < 35 ||
+      careScore < 45;
+
+    if (needsCareSoon) {
+      showTickleCue("grumpy", "No tickles right now.", "I need care first.");
+      return;
+    }
+
+    const playfulResponses = [
+      ["Heehee! Tickles!", "That feels funny!"],
+      ["Haha, again!", "More giggles please!"],
+      ["Wiggle wiggle!", "That was playful!"],
+    ] as const;
+    const picked =
+      playfulResponses[Math.floor(Math.random() * playfulResponses.length)];
+    showTickleCue("playful", picked[0], picked[1]);
+  };
+
   const requestIntent = (intent: Intent): void => {
     if (state.dead) {
-      showMessage('Your pet is resting. Restart to play again.');
+      showMessage("Your pet is resting. Restart to play again.");
       return;
     }
 
     if (needsEggSelection) {
-      showMessage('Pick an egg first.');
+      showMessage("Pick an egg first.");
       return;
     }
 
-    if (intent === 'feedSnack' && snacksRemaining <= 0) {
+    if (intent === "feedSnack" && snacksRemaining <= 0) {
       setShowFeedSheet(false);
-      showMessage('Too many snacks today. Try Play or Learn.');
+      showMessage("Too many snacks today. Try Play or Learn.");
       return;
     }
 
     if (actionFlowBusy) {
-      showMessage('Finish this listening step first.');
+      showMessage("Finish this listening step first.");
       return;
     }
 
-    if (intent === 'feedMeal' || intent === 'feedSnack') {
+    if (intent === "feedMeal" || intent === "feedSnack") {
       setShowFeedSheet(false);
     }
 
@@ -456,20 +554,24 @@ export default function App(): JSX.Element {
   };
 
   const applySettings = (): void => {
-    dispatch({ type: 'setSettings', settings: settingsDraft, nowTs: Date.now() });
-    showMessage('Parent settings saved.');
+    dispatch({
+      type: "setSettings",
+      settings: settingsDraft,
+      nowTs: Date.now(),
+    });
+    showMessage("Parent settings saved.");
   };
 
   const exportSave = (): void => {
     setExportText(JSON.stringify(state, null, 2));
-    showMessage('Save exported below.');
+    showMessage("Save exported below.");
   };
 
   const importSave = (): void => {
     try {
       const parsed = JSON.parse(importText) as unknown;
-      if (typeof parsed !== 'object' || parsed === null) {
-        throw new Error('Invalid save shape');
+      if (typeof parsed !== "object" || parsed === null) {
+        throw new Error("Invalid save shape");
       }
       const importAdapter: StorageAdapter = {
         getItem() {
@@ -477,51 +579,61 @@ export default function App(): JSX.Element {
         },
         setItem() {
           // no-op
-        }
+        },
       };
 
       const normalized = loadState(importAdapter, Date.now());
-      dispatch({ type: 'importState', state: normalized, nowTs: Date.now() });
+      dispatch({ type: "importState", state: normalized, nowTs: Date.now() });
       resetMirrorFlow();
+      clearTickleTimer();
+      setTickleCue(null);
       setShowParentPanel(false);
-      showMessage('Save imported.');
+      showMessage("Save imported.");
     } catch {
-      showMessage('Import failed. Please paste valid JSON.');
+      showMessage("Import failed. Please paste valid JSON.");
     }
   };
 
   const restartGame = (): void => {
     dispatch({
-      type: 'applyAction',
-      actionType: 'restart',
+      type: "applyAction",
+      actionType: "restart",
       nowTs: Date.now(),
-      outcome: { preserveSettingsOnRestart: true }
+      outcome: { preserveSettingsOnRestart: true },
     });
 
     setShowParentPanel(false);
     setShowStatusSheet(false);
     setShowFeedSheet(false);
+    setPlayRound(null);
+    setLearnRound(null);
+    clearHatchTimers();
+    setHatchPhase("idle");
     resetMirrorFlow();
+    clearTickleTimer();
+    setTickleCue(null);
     setStarRowBurst(false);
     clearStarRowTimer();
     setConfirmAction(null);
-    showMessage('New egg started. Pick a style to hatch your pet.');
+    showMessage("New egg started. Pick a style to hatch your pet.");
   };
 
   const hatchEarly = (): void => {
-    if (state.stage === 'adult') {
-      showMessage('Your pet is already an adult.');
+    if (state.stage === "adult") {
+      showMessage("Your pet is already an adult.");
       return;
     }
 
-    if (state.stage === 'egg' && !state.eggStyle) {
-      showMessage('Pick an egg style first.');
+    if (state.stage === "egg" && !state.eggStyle) {
+      showMessage("Pick an egg style first.");
       return;
     }
 
-    doAction('hatchEarly');
+    doAction("hatchEarly");
     setConfirmAction(null);
-    showMessage(state.stage === 'egg' ? 'Egg hatched early!' : 'Stage advanced early.');
+    showMessage(
+      state.stage === "egg" ? "Egg hatched early!" : "Stage advanced early.",
+    );
   };
 
   const handlePlayChoice = (side: Side): void => {
@@ -531,12 +643,16 @@ export default function App(): JSX.Element {
 
     const won = side === playRound.target;
     dispatch({
-      type: 'applyAction',
-      actionType: won ? 'playWin' : 'playLoss',
-      nowTs: Date.now()
+      type: "applyAction",
+      actionType: won ? "playWin" : "playLoss",
+      nowTs: Date.now(),
     });
     setPlayRound(null);
-    showMessage(won ? 'Nice! You caught the star.' : 'Missed this round, but good effort.');
+    showMessage(
+      won
+        ? "Nice! You caught the star."
+        : "Missed this round, but good effort.",
+    );
   };
 
   const handleLearnChoice = (choice: string): void => {
@@ -546,46 +662,46 @@ export default function App(): JSX.Element {
 
     const correct = choice === learnRound.target;
     dispatch({
-      type: 'applyAction',
-      actionType: correct ? 'learnCorrect' : 'learnWrong',
-      nowTs: Date.now()
+      type: "applyAction",
+      actionType: correct ? "learnCorrect" : "learnWrong",
+      nowTs: Date.now(),
     });
     setLearnRound(null);
-    showMessage(correct ? 'You did it. Great learning!' : 'Almost! Try again.');
+    showMessage(correct ? "You did it. Great learning!" : "Almost! Try again.");
   };
 
   const chooseEggStyle = (eggStyle: EggStyle): void => {
-    dispatch({ type: 'setEggStyle', eggStyle, nowTs: Date.now() });
+    dispatch({ type: "setEggStyle", eggStyle, nowTs: Date.now() });
     showMessage(`${EGG_META[eggStyle].name} selected.`);
   };
 
   const handleDockAction = (action: DockAction): void => {
     if (actionFlowBusy) {
-      showMessage('Finish this listening step first.');
+      showMessage("Finish this listening step first.");
       return;
     }
 
-    if (action === 'feed') {
+    if (action === "feed") {
       setShowFeedSheet(true);
       return;
     }
 
-    if (action === 'play') {
-      requestIntent('play');
+    if (action === "play") {
+      requestIntent("play");
       return;
     }
 
-    if (action === 'learn') {
-      requestIntent('learn');
+    if (action === "learn") {
+      requestIntent("learn");
       return;
     }
 
-    if (action === 'sleep') {
+    if (action === "sleep") {
       if (state.asleep) {
-        doAction('wake');
-        showMessage('Your pet woke up.');
+        doAction("wake");
+        showMessage("Your pet woke up.");
       } else {
-        requestIntent('sleep');
+        requestIntent("sleep");
       }
     }
   };
@@ -595,7 +711,9 @@ export default function App(): JSX.Element {
   }
 
   if (needsEggSelection) {
-    return <EggSelectionScreen toast={toast} onSelectEggStyle={chooseEggStyle} />;
+    return (
+      <EggSelectionScreen toast={toast} onSelectEggStyle={chooseEggStyle} />
+    );
   }
 
   return (
@@ -632,10 +750,12 @@ export default function App(): JSX.Element {
         sleepAudioRef={sleepAudioRef}
         onShowStatusSheet={() => setShowStatusSheet(true)}
         onHabitatTap={handleHabitatTap}
+        onTickleCritter={handleCritterTickle}
         onStartParentGateHold={startParentGateHold}
         onStopParentGateHold={stopParentGateHold}
         onDockAction={handleDockAction}
         onDismissParentHint={dismissParentHint}
+        tickleCue={tickleCue}
       />
 
       <FeedModal

@@ -26,6 +26,7 @@ export interface ParentSettings {
   hatchSoundEnabled: boolean;
   confirmMode: ConfirmMode;
   timerSeconds: number;
+  eggHatchSeconds: number;
   perActionPrompts: PerActionPromptMap;
   pauseDecay: boolean;
   sleepWindow: {
