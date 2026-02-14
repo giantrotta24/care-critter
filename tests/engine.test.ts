@@ -57,19 +57,25 @@ describe('applyTimeDecay', () => {
 });
 
 describe('snack daily reset', () => {
-  it('resets snack cap on a new date', () => {
+  it('resets snack cap and daily listening counters on a new date', () => {
     const dayOne = new Date('2026-02-10T18:00:00').getTime();
     const dayTwo = new Date('2026-02-11T09:00:00').getTime();
 
     const state = {
       ...createInitialState(dayOne, undefined, () => 0.5),
       snackCountToday: 3,
+      starsToday: 4,
+      successfulMirrorsToday: 4,
+      totalStars: 9,
       lastSnackResetDate: toIsoDate(dayOne)
     };
 
     const next = applyActionReward(state, 'feedSnack', {}, dayTwo, () => 0.5);
 
     expect(next.snackCountToday).toBe(1);
+    expect(next.starsToday).toBe(0);
+    expect(next.successfulMirrorsToday).toBe(0);
+    expect(next.totalStars).toBe(9);
   });
 });
 

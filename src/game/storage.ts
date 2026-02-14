@@ -99,6 +99,14 @@ function isCritterVariant(value: unknown): value is GameState['critterVariant'] 
   return value === 'sunny' || value === 'stripe' || value === 'astro' || value === 'forest';
 }
 
+function normalizeCount(value: unknown, fallback = 0): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.round(value));
+}
+
 export function loadState(
   adapter: StorageAdapter = localStorageAdapter,
   nowTs = Date.now()
@@ -157,11 +165,22 @@ export function loadState(
           ? merged.critterVariant
           : EGG_TO_VARIANT[eggStyle];
 
+    const successfulMirrorsToday = normalizeCount(merged.successfulMirrorsToday, 0);
+    const bestDayRecord = Math.max(
+      normalizeCount(merged.bestDayRecord, 0),
+      successfulMirrorsToday
+    );
+
     return {
       ...merged,
       adultVariant,
       eggStyle,
-      critterVariant
+      critterVariant,
+      starsToday: Math.min(5, normalizeCount(merged.starsToday, 0)),
+      totalStars: normalizeCount(merged.totalStars, 0),
+      successfulMirrorsToday,
+      bestDayRecord,
+      currentPhase: 'idle'
     };
   } catch {
     return createInitialState(nowTs);
