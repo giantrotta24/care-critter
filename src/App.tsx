@@ -219,6 +219,8 @@ export default function App(): JSX.Element {
   const [hatchPhase, setHatchPhase] = useState<'idle' | 'shake' | 'crack' | 'pop'>('idle');
   const [hatchEggStyle, setHatchEggStyle] = useState<EggStyle>('speckled');
   const [promptSuccessCue, setPromptSuccessCue] = useState<PromptSuccessCue | null>(null);
+  const [critterX, setCritterX] = useState(50);
+  const [critterFacing, setCritterFacing] = useState<'left' | 'right'>('right');
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [showParentHint, setShowParentHint] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
@@ -353,6 +355,30 @@ export default function App(): JSX.Element {
     }
   }, [showParentPanel, state.settings]);
 
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setCritterX(50);
+      return;
+    }
+
+    if (state.stage === 'egg' || state.dead) {
+      setCritterX(50);
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (state.asleep || hatchPhase !== 'idle') {
+        return;
+      }
+
+      const nextX = Math.floor(22 + Math.random() * 56);
+      setCritterFacing(nextX >= critterX ? 'right' : 'left');
+      setCritterX(nextX);
+    }, 4200);
+
+    return () => window.clearInterval(intervalId);
+  }, [state.stage, state.dead, state.asleep, hatchPhase, prefersReducedMotion, critterX]);
+
   const playSecondsLeft = playRound
     ? Math.max(0, Math.ceil((playRound.expiresAt - clockTs) / 1000))
     : 0;
@@ -436,11 +462,13 @@ export default function App(): JSX.Element {
     dispatch({ type: 'applyAction', actionType, nowTs: Date.now() });
   };
 
-  const continueIntent = (intent: Intent): void => {
+  const continueIntent = (intent: Intent, fromMirrorPrompt = false): void => {
     if (intent === 'feedMeal') {
       doAction('feedMeal');
       setShowFeedSheet(false);
-      showMessage('Meal complete. Great care!');
+      if (!fromMirrorPrompt) {
+        showMessage('Meal complete. Great care!');
+      }
       return;
     }
 
@@ -452,7 +480,9 @@ export default function App(): JSX.Element {
 
       doAction('feedSnack');
       setShowFeedSheet(false);
-      showMessage('Snack time complete.');
+      if (!fromMirrorPrompt) {
+        showMessage('Snack time complete.');
+      }
       return;
     }
 
@@ -493,7 +523,9 @@ export default function App(): JSX.Element {
         nowTs: Date.now(),
         outcome: { allowSleep: true }
       });
-      showMessage('Bedtime started.');
+      if (!fromMirrorPrompt) {
+        showMessage('Bedtime started.');
+      }
     }
   };
 
@@ -564,7 +596,7 @@ export default function App(): JSX.Element {
     const intent = pendingIntent;
     showPromptSuccessCue(intent);
     setPendingIntent(null);
-    continueIntent(intent);
+    continueIntent(intent, true);
   };
 
   const cancelMirror = (): void => {
@@ -805,15 +837,6 @@ export default function App(): JSX.Element {
               <div className="decor decor-sky" aria-hidden="true">
                 {isNight(clockTs) ? '✦ ✦ ✧' : '☁ ☀'}
               </div>
-              {promptSuccessCue && (
-                <div className="prompt-success" role="status" aria-live="polite">
-                  <p className="prompt-success-icon" aria-hidden="true">
-                    <ActionGlyph icon={promptSuccessCue.icon} />
-                  </p>
-                  <p className="prompt-success-text">{promptSuccessCue.text}</p>
-                  <p className="prompt-success-sub">You did it!</p>
-                </div>
-              )}
               {hatchPhase !== 'idle' && (
                 <div className={`hatch-overlay phase-${hatchPhase}`} aria-hidden="true">
                   {(hatchPhase === 'shake' || hatchPhase === 'crack') && (
@@ -834,18 +857,32 @@ export default function App(): JSX.Element {
               )}
 
               <div
-                className={`critter-zone ${state.asleep ? 'asleep' : ''} ${hatchPhase === 'pop' ? 'hatch-pop' : ''}`}
+                className={`critter-zone ${state.asleep ? 'asleep' : ''} ${hatchPhase === 'pop' ? 'hatch-pop' : ''} ${promptSuccessCue ? 'celebrate' : ''}`}
+                style={{ left: `${critterX}%` }}
                 aria-live="polite"
               >
+                {promptSuccessCue && (
+                  <div className="critter-speech" role="status" aria-live="polite">
+                    <p className="critter-speech-main">
+                      <span className="critter-speech-icon" aria-hidden="true">
+                        <ActionGlyph icon={promptSuccessCue.icon} />
+                      </span>
+                      {promptSuccessCue.text}
+                    </p>
+                    <p className="critter-speech-sub">You did it!</p>
+                  </div>
+                )}
                 {state.stage === 'egg' ? (
                   <EggSprite eggStyle={state.eggStyle ?? 'speckled'} size="large" />
                 ) : (
-                  <CritterSprite
-                    variant={state.critterVariant}
-                    stage={state.stage}
-                    asleep={state.asleep}
-                    sickness={state.sickness}
-                  />
+                  <div className={critterFacing === 'left' ? 'critter-face-left' : ''}>
+                    <CritterSprite
+                      variant={state.critterVariant}
+                      stage={state.stage}
+                      asleep={state.asleep}
+                      sickness={state.sickness}
+                    />
+                  </div>
                 )}
               </div>
 
