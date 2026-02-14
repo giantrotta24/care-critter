@@ -538,6 +538,67 @@ p {
   text-align: center;
 }
 
+.prompt-success {
+  position: absolute;
+  left: 50%;
+  top: 37%;
+  transform: translate(-50%, -50%);
+  z-index: 7;
+  background: rgba(255, 255, 255, 0.95);
+  border: var(--pixel-border);
+  border-radius: 0.95rem;
+  width: min(280px, calc(100% - 1.2rem));
+  padding: 0.55rem 0.6rem;
+  text-align: center;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+  animation: prompt-success-pop 1.2s ease-out both;
+}
+
+.prompt-success-icon {
+  margin: 0;
+  line-height: 1;
+}
+
+.prompt-success-icon .action-glyph {
+  font-size: 1.9rem;
+}
+
+.prompt-success-text {
+  margin: 0.2rem 0 0;
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  font-size: 0.44rem;
+  line-height: 1.5;
+  color: var(--primary-deep);
+}
+
+.prompt-success-sub {
+  margin: 0.15rem 0 0;
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  font-size: 0.36rem;
+}
+
+@keyframes prompt-success-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.78);
+  }
+
+  16% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+
+  76% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -58%) scale(0.96);
+  }
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -902,5 +963,9 @@ textarea.text-input {
   .lock-progress-track span,
   .hold-ring-progress {
     transition: none;
+  }
+
+  .prompt-success {
+    animation: none;
   }
 }

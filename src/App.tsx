@@ -44,6 +44,11 @@ interface PlayRound {
   expiresAt: number;
 }
 
+interface PromptSuccessCue {
+  icon: DockIcon;
+  text: string;
+}
+
 const PROMPT_KEY_BY_INTENT: Record<Intent, MirrorActionKey> = {
   feedMeal: 'feedMeal',
   feedSnack: 'feedSnack',
@@ -138,6 +143,26 @@ function defaultPromptIconForIntent(intent: Intent): PromptIconKey {
   return DEFAULT_PROMPT_ICONS[PROMPT_KEY_BY_INTENT[intent]];
 }
 
+function successCueForIntent(intent: Intent): PromptSuccessCue {
+  if (intent === 'feedMeal') {
+    return { icon: 'meal', text: 'Yum! Great job!' };
+  }
+
+  if (intent === 'feedSnack') {
+    return { icon: 'snack', text: 'Nice snack choice!' };
+  }
+
+  if (intent === 'play') {
+    return { icon: 'play', text: 'Awesome play time!' };
+  }
+
+  if (intent === 'learn') {
+    return { icon: 'learn', text: 'Great learning!' };
+  }
+
+  return { icon: 'sleep', text: 'Bedtime win!' };
+}
+
 function getConfirmTitle(confirmAction: ConfirmAction): string {
   if (confirmAction === 'restart') {
     return 'Restart Pet?';
@@ -164,6 +189,7 @@ export default function App(): JSX.Element {
   const previousStageRef = useRef(state.stage);
   const hatchTimersRef = useRef<number[]>([]);
   const hatchAudioRef = useRef<HTMLAudioElement | null>(null);
+  const successCueTimerRef = useRef<number | null>(null);
 
   const [pendingIntent, setPendingIntent] = useState<Intent | null>(null);
   const [showFeedSheet, setShowFeedSheet] = useState(false);
@@ -192,6 +218,7 @@ export default function App(): JSX.Element {
   const [clockTs, setClockTs] = useState(Date.now());
   const [hatchPhase, setHatchPhase] = useState<'idle' | 'shake' | 'crack' | 'pop'>('idle');
   const [hatchEggStyle, setHatchEggStyle] = useState<EggStyle>('speckled');
+  const [promptSuccessCue, setPromptSuccessCue] = useState<PromptSuccessCue | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [showParentHint, setShowParentHint] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
@@ -223,6 +250,22 @@ export default function App(): JSX.Element {
   const clearHatchTimers = (): void => {
     hatchTimersRef.current.forEach((id) => window.clearTimeout(id));
     hatchTimersRef.current = [];
+  };
+
+  const clearSuccessCueTimer = (): void => {
+    if (successCueTimerRef.current) {
+      window.clearTimeout(successCueTimerRef.current);
+      successCueTimerRef.current = null;
+    }
+  };
+
+  const showPromptSuccessCue = (intent: Intent): void => {
+    clearSuccessCueTimer();
+    setPromptSuccessCue(successCueForIntent(intent));
+    successCueTimerRef.current = window.setTimeout(() => {
+      setPromptSuccessCue(null);
+      successCueTimerRef.current = null;
+    }, 1250);
   };
 
   const playHatchSound = (): void => {
@@ -278,6 +321,7 @@ export default function App(): JSX.Element {
     return () => {
       clearParentGateHold();
       clearHatchTimers();
+      clearSuccessCueTimer();
     };
   }, []);
 
@@ -518,6 +562,7 @@ export default function App(): JSX.Element {
     }
 
     const intent = pendingIntent;
+    showPromptSuccessCue(intent);
     setPendingIntent(null);
     continueIntent(intent);
   };
@@ -760,6 +805,15 @@ export default function App(): JSX.Element {
               <div className="decor decor-sky" aria-hidden="true">
                 {isNight(clockTs) ? '✦ ✦ ✧' : '☁ ☀'}
               </div>
+              {promptSuccessCue && (
+                <div className="prompt-success" role="status" aria-live="polite">
+                  <p className="prompt-success-icon" aria-hidden="true">
+                    <ActionGlyph icon={promptSuccessCue.icon} />
+                  </p>
+                  <p className="prompt-success-text">{promptSuccessCue.text}</p>
+                  <p className="prompt-success-sub">You did it!</p>
+                </div>
+              )}
               {hatchPhase !== 'idle' && (
                 <div className={`hatch-overlay phase-${hatchPhase}`} aria-hidden="true">
                   {(hatchPhase === 'shake' || hatchPhase === 'crack') && (
