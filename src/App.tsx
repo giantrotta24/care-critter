@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { HoldToConfirmButton } from './components/HoldToConfirmButton';
 import { Modal } from './components/Modal';
 import {
@@ -24,9 +24,10 @@ import type {
 
 type Intent = 'feedMeal' | 'feedSnack' | 'play' | 'learn' | 'sleep';
 type Side = 'left' | 'right';
-type DockAction = 'feed' | 'play' | 'learn' | 'sleep' | 'status';
+type DockAction = 'feed' | 'play' | 'learn' | 'sleep';
 type ConfirmAction = 'restart' | 'hatchEarly' | null;
-type DockIcon = PromptIconKey | 'status' | 'lock';
+type DockIcon = PromptIconKey | 'lock';
+type CritterMood = 'neutral' | 'modeling' | 'curious' | 'celebrating';
 
 interface ParentChallenge {
   a: number;
@@ -45,9 +46,14 @@ interface PlayRound {
 }
 
 interface PromptSuccessCue {
-  icon: DockIcon;
+  icon: PromptIconKey;
   text: string;
 }
+
+const MODELING_DURATION_MS = 920;
+const CELEBRATION_DURATION_MS = 920;
+const PHASE_SMOOTH_DELAY_MS = 140;
+const STAR_ROW_BURST_MS = 960;
 
 const PROMPT_KEY_BY_INTENT: Record<Intent, MirrorActionKey> = {
   feedMeal: 'feedMeal',
@@ -55,6 +61,14 @@ const PROMPT_KEY_BY_INTENT: Record<Intent, MirrorActionKey> = {
   play: 'play',
   learn: 'learn',
   sleep: 'sleep'
+};
+
+const MODEL_CLASS_BY_INTENT: Record<Intent, string> = {
+  feedMeal: 'model-feed',
+  feedSnack: 'model-feed',
+  play: 'model-play',
+  learn: 'model-learn',
+  sleep: 'model-sleep'
 };
 
 const PROMPT_ROWS: Array<{ key: MirrorActionKey; label: string }> = [
@@ -189,12 +203,20 @@ export default function App(): JSX.Element {
   const previousStageRef = useRef(state.stage);
   const hatchTimersRef = useRef<number[]>([]);
   const hatchAudioRef = useRef<HTMLAudioElement | null>(null);
+  const modelAudioRef = useRef<HTMLAudioElement | null>(null);
+  const successAudioRef = useRef<HTMLAudioElement | null>(null);
+  const starAudioRef = useRef<HTMLAudioElement | null>(null);
+  const sleepAudioRef = useRef<HTMLAudioElement | null>(null);
   const successCueTimerRef = useRef<number | null>(null);
+  const phaseTimerRef = useRef<number | null>(null);
+  const starRowTimerRef = useRef<number | null>(null);
+  const groundTapTimerRef = useRef<number | null>(null);
 
-  const [pendingIntent, setPendingIntent] = useState<Intent | null>(null);
+  const [activeIntent, setActiveIntent] = useState<Intent | null>(null);
   const [showFeedSheet, setShowFeedSheet] = useState(false);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [toast, setToast] = useState('');
+  const [timerWaiting, setTimerWaiting] = useState(false);
 
   const [playRound, setPlayRound] = useState<PlayRound | null>(null);
   const [learnRound, setLearnRound] = useState<LearnRound | null>(null);
@@ -219,6 +241,9 @@ export default function App(): JSX.Element {
   const [hatchPhase, setHatchPhase] = useState<'idle' | 'shake' | 'crack' | 'pop'>('idle');
   const [hatchEggStyle, setHatchEggStyle] = useState<EggStyle>('speckled');
   const [promptSuccessCue, setPromptSuccessCue] = useState<PromptSuccessCue | null>(null);
+  const [starRowBurst, setStarRowBurst] = useState(false);
+  const [groundTapActive, setGroundTapActive] = useState(false);
+  const [groundTapFx, setGroundTapFx] = useState<{ x: number; tick: number } | null>(null);
   const [critterX, setCritterX] = useState(50);
   const [critterFacing, setCritterFacing] = useState<'left' | 'right'>('right');
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -254,11 +279,47 @@ export default function App(): JSX.Element {
     hatchTimersRef.current = [];
   };
 
+  const clearPhaseTimer = (): void => {
+    if (phaseTimerRef.current) {
+      window.clearTimeout(phaseTimerRef.current);
+      phaseTimerRef.current = null;
+    }
+  };
+
+  const clearStarRowTimer = (): void => {
+    if (starRowTimerRef.current) {
+      window.clearTimeout(starRowTimerRef.current);
+      starRowTimerRef.current = null;
+    }
+  };
+
+  const clearGroundTapTimer = (): void => {
+    if (groundTapTimerRef.current) {
+      window.clearTimeout(groundTapTimerRef.current);
+      groundTapTimerRef.current = null;
+    }
+  };
+
   const clearSuccessCueTimer = (): void => {
     if (successCueTimerRef.current) {
       window.clearTimeout(successCueTimerRef.current);
       successCueTimerRef.current = null;
     }
+  };
+
+  const setCurrentPhase = (phase: GameState['currentPhase']): void => {
+    dispatch({ type: 'setCurrentPhase', phase });
+  };
+
+  const playEffectSound = (audio: HTMLAudioElement | null): void => {
+    if (!state.settings.hatchSoundEnabled || !audio) {
+      return;
+    }
+
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      // Ignore autoplay/gesture restrictions.
+    });
   };
 
   const showPromptSuccessCue = (intent: Intent): void => {
@@ -271,14 +332,7 @@ export default function App(): JSX.Element {
   };
 
   const playHatchSound = (): void => {
-    if (!state.settings.hatchSoundEnabled || !hatchAudioRef.current) {
-      return;
-    }
-
-    hatchAudioRef.current.currentTime = 0;
-    void hatchAudioRef.current.play().catch(() => {
-      // Ignore autoplay/gesture restrictions.
-    });
+    playEffectSound(hatchAudioRef.current);
   };
 
   useEffect(() => {
@@ -323,6 +377,9 @@ export default function App(): JSX.Element {
     return () => {
       clearParentGateHold();
       clearHatchTimers();
+      clearPhaseTimer();
+      clearStarRowTimer();
+      clearGroundTapTimer();
       clearSuccessCueTimer();
     };
   }, []);
@@ -350,6 +407,28 @@ export default function App(): JSX.Element {
   }, [toast]);
 
   useEffect(() => {
+    const mirrorImages = [
+      '/prompt-cues/feed-meal.jpeg',
+      '/prompt-cues/feed-snack.jpeg',
+      '/prompt-cues/play-action.jpeg',
+      '/prompt-cues/sleep-action.jpeg'
+    ];
+
+    mirrorImages.forEach((src) => {
+      const image = new Image();
+      image.src = src;
+    });
+  }, []);
+
+  useEffect(() => {
+    [hatchAudioRef.current, modelAudioRef.current, successAudioRef.current, starAudioRef.current, sleepAudioRef.current]
+      .filter((audio): audio is HTMLAudioElement => audio !== null)
+      .forEach((audio) => {
+        audio.load();
+      });
+  }, []);
+
+  useEffect(() => {
     if (showParentPanel) {
       setSettingsDraft(state.settings);
     }
@@ -367,7 +446,7 @@ export default function App(): JSX.Element {
     }
 
     const intervalId = window.setInterval(() => {
-      if (state.asleep || hatchPhase !== 'idle') {
+      if (state.asleep || hatchPhase !== 'idle' || state.currentPhase !== 'idle') {
         return;
       }
 
@@ -377,7 +456,7 @@ export default function App(): JSX.Element {
     }, 4200);
 
     return () => window.clearInterval(intervalId);
-  }, [state.stage, state.dead, state.asleep, hatchPhase, prefersReducedMotion, critterX]);
+  }, [state.stage, state.dead, state.asleep, state.currentPhase, hatchPhase, prefersReducedMotion, critterX]);
 
   const playSecondsLeft = playRound
     ? Math.max(0, Math.ceil((playRound.expiresAt - clockTs) / 1000))
@@ -426,26 +505,56 @@ export default function App(): JSX.Element {
     previousStageRef.current = state.stage;
   }, [state.stage, state.eggStyle, prefersReducedMotion, state.settings.hatchSoundEnabled]);
 
+  useEffect(() => {
+    if (state.starsToday < 5 || starRowBurst) {
+      return;
+    }
+
+    setStarRowBurst(true);
+    playEffectSound(successAudioRef.current);
+    clearStarRowTimer();
+    starRowTimerRef.current = window.setTimeout(() => {
+      dispatch({ type: 'resetStarsToday' });
+      setStarRowBurst(false);
+      starRowTimerRef.current = null;
+    }, STAR_ROW_BURST_MS);
+  }, [state.starsToday, starRowBurst]);
+
   const snacksUsedToday =
     state.lastSnackResetDate === toIsoDate(Date.now()) ? state.snackCountToday : 0;
   const snacksRemaining = Math.max(0, CAPS.snackPerDay - snacksUsedToday);
 
   const mirrorPrompt = useMemo(() => {
-    if (!pendingIntent) {
+    if (!activeIntent) {
       return {
         promptText: '',
         promptIcon: 'meal' as PromptIconKey
       };
     }
 
-    const promptKey = PROMPT_KEY_BY_INTENT[pendingIntent];
+    const promptKey = PROMPT_KEY_BY_INTENT[activeIntent];
     const configured = state.settings.perActionPrompts[promptKey];
 
     return {
       promptText: configured.promptText,
-      promptIcon: configured.promptIcon ?? defaultPromptIconForIntent(pendingIntent)
+      promptIcon: configured.promptIcon ?? defaultPromptIconForIntent(activeIntent)
     };
-  }, [pendingIntent, state.settings.perActionPrompts]);
+  }, [activeIntent, state.settings.perActionPrompts]);
+
+  const isModeling = state.currentPhase === 'modeling' && Boolean(activeIntent);
+  const isMirrorPhase = state.currentPhase === 'mirror' && Boolean(activeIntent);
+  const isCelebrating = state.currentPhase === 'celebrating';
+  const isCurious = isMirrorPhase && timerWaiting;
+  const critterMood: CritterMood = isCelebrating
+    ? 'celebrating'
+    : isModeling
+      ? 'modeling'
+      : isCurious
+        ? 'curious'
+        : 'neutral';
+  const modelClass = activeIntent ? MODEL_CLASS_BY_INTENT[activeIntent] : '';
+  const starsFilled = Math.max(0, Math.min(5, state.starsToday));
+  const actionFlowBusy = state.currentPhase !== 'idle';
 
   const needsEggSelection = state.stage === 'egg' && state.eggStyle === null;
 
@@ -456,6 +565,31 @@ export default function App(): JSX.Element {
 
   const showMessage = (message: string): void => {
     setToast(message);
+  };
+
+  const handleHabitatTap = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (prefersReducedMotion) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+    if (target.closest('.parent-lock')) {
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientX - bounds.left) / bounds.width;
+    const clamped = Math.max(8, Math.min(92, ratio * 100));
+    const tick = Date.now();
+
+    setGroundTapFx({ x: clamped, tick });
+    setGroundTapActive(true);
+
+    clearGroundTapTimer();
+    groundTapTimerRef.current = window.setTimeout(() => {
+      setGroundTapActive(false);
+      groundTapTimerRef.current = null;
+    }, 280);
   };
 
   const doAction = (actionType: ActionType): void => {
@@ -523,10 +657,23 @@ export default function App(): JSX.Element {
         nowTs: Date.now(),
         outcome: { allowSleep: true }
       });
+      playEffectSound(sleepAudioRef.current);
       if (!fromMirrorPrompt) {
         showMessage('Bedtime started.');
       }
     }
+  };
+
+  const startModelingFlow = (intent: Intent): void => {
+    setActiveIntent(intent);
+    setTimerWaiting(state.settings.confirmMode === 'timer');
+    setCurrentPhase('modeling');
+    playEffectSound(modelAudioRef.current);
+    clearPhaseTimer();
+    phaseTimerRef.current = window.setTimeout(() => {
+      setCurrentPhase('mirror');
+      phaseTimerRef.current = null;
+    }, MODELING_DURATION_MS + PHASE_SMOOTH_DELAY_MS);
   };
 
   const requestIntent = (intent: Intent): void => {
@@ -540,8 +687,23 @@ export default function App(): JSX.Element {
       return;
     }
 
+    if (intent === 'feedSnack' && snacksRemaining <= 0) {
+      setShowFeedSheet(false);
+      showMessage('Too many snacks today. Try Play or Learn.');
+      return;
+    }
+
+    if (actionFlowBusy) {
+      showMessage('Finish this listening step first.');
+      return;
+    }
+
+    if (intent === 'feedMeal' || intent === 'feedSnack') {
+      setShowFeedSheet(false);
+    }
+
     if (state.settings.mirrorEnabled) {
-      setPendingIntent(intent);
+      startModelingFlow(intent);
       return;
     }
 
@@ -589,19 +751,32 @@ export default function App(): JSX.Element {
   };
 
   const resolveMirrorDone = (): void => {
-    if (!pendingIntent) {
+    if (!activeIntent) {
       return;
     }
 
-    const intent = pendingIntent;
+    const intent = activeIntent;
+    dispatch({ type: 'recordMirrorSuccess', nowTs: Date.now() });
+    playEffectSound(successAudioRef.current);
+    playEffectSound(starAudioRef.current);
     showPromptSuccessCue(intent);
-    setPendingIntent(null);
-    continueIntent(intent, true);
+    setTimerWaiting(false);
+    setCurrentPhase('celebrating');
+    clearPhaseTimer();
+    phaseTimerRef.current = window.setTimeout(() => {
+      setCurrentPhase('idle');
+      setActiveIntent(null);
+      continueIntent(intent, true);
+      phaseTimerRef.current = null;
+    }, CELEBRATION_DURATION_MS + PHASE_SMOOTH_DELAY_MS);
   };
 
   const cancelMirror = (): void => {
-    setPendingIntent(null);
-    showMessage('No worries. You can try again later.');
+    setTimerWaiting(false);
+    clearPhaseTimer();
+    setCurrentPhase('idle');
+    setActiveIntent(null);
+    showMessage('Okay, we can try again later.');
   };
 
   const submitParentChallenge = (): void => {
@@ -645,6 +820,9 @@ export default function App(): JSX.Element {
 
       const normalized = loadState(importAdapter, Date.now());
       dispatch({ type: 'importState', state: normalized, nowTs: Date.now() });
+      setCurrentPhase('idle');
+      setActiveIntent(null);
+      setTimerWaiting(false);
       setShowParentPanel(false);
       showMessage('Save imported.');
     } catch {
@@ -663,7 +841,12 @@ export default function App(): JSX.Element {
     setShowParentPanel(false);
     setShowStatusSheet(false);
     setShowFeedSheet(false);
-    setPendingIntent(null);
+    setCurrentPhase('idle');
+    setActiveIntent(null);
+    setTimerWaiting(false);
+    setStarRowBurst(false);
+    clearPhaseTimer();
+    clearStarRowTimer();
     setConfirmAction(null);
     showMessage('New egg started. Pick a style to hatch your pet.');
   };
@@ -720,6 +903,11 @@ export default function App(): JSX.Element {
   };
 
   const handleDockAction = (action: DockAction): void => {
+    if (actionFlowBusy) {
+      showMessage('Finish this listening step first.');
+      return;
+    }
+
     if (action === 'feed') {
       setShowFeedSheet(true);
       return;
@@ -744,8 +932,6 @@ export default function App(): JSX.Element {
       }
       return;
     }
-
-    setShowStatusSheet(true);
   };
 
   if (state.dead) {
@@ -785,8 +971,6 @@ export default function App(): JSX.Element {
               </button>
             ))}
           </div>
-
-          <p className="helper-text">Grown-ups: hold the lock icon for 2 seconds to open Parent Mode.</p>
         </section>
         {toast && <div className="toast">{toast}</div>}
       </div>
@@ -801,26 +985,34 @@ export default function App(): JSX.Element {
             <audio ref={hatchAudioRef} preload="auto">
               <source src="/sounds/hatch.wav" type="audio/wav" />
             </audio>
-            <button
-              type="button"
-              className={`parent-lock ${parentHoldActive ? 'holding' : ''}`}
-              aria-label="Open parent mode"
-              onPointerDown={startParentGateHold}
-              onPointerUp={stopParentGateHold}
-              onPointerLeave={stopParentGateHold}
-              onPointerCancel={stopParentGateHold}
-            >
-              <ActionGlyph icon="lock" />
-              <span className="lock-progress-track" aria-hidden="true">
-                <span style={{ width: `${parentHoldProgress}%` }} />
-              </span>
-            </button>
-            <span className="parent-lock-note">Grown-ups</span>
+            <audio ref={modelAudioRef} preload="auto">
+              <source src="/sounds/model-ok.wav" type="audio/wav" />
+            </audio>
+            <audio ref={successAudioRef} preload="auto">
+              <source src="/sounds/success.wav" type="audio/wav" />
+            </audio>
+            <audio ref={starAudioRef} preload="auto">
+              <source src="/sounds/star.wav" type="audio/wav" />
+            </audio>
+            <audio ref={sleepAudioRef} preload="auto">
+              <source src="/sounds/sleep.wav" type="audio/wav" />
+            </audio>
 
             <div className="habitat-hud">
               <div className="hud-chip-row">
                 <span className="hud-chip">{stageLabel(state)}</span>
                 <span className="hud-chip">{clockLabel}</span>
+              </div>
+
+              <div className="hud-actions">
+                <button
+                  type="button"
+                  className="hud-chip hud-chip-btn"
+                  disabled={actionFlowBusy}
+                  onClick={() => setShowStatusSheet(true)}
+                >
+                  Care
+                </button>
               </div>
 
               <div className="meter-row">
@@ -830,13 +1022,42 @@ export default function App(): JSX.Element {
               </div>
             </div>
 
-            <div className="habitat-screen">
+            <div
+              className={`habitat-screen ${groundTapActive ? 'ground-tapped' : ''}`}
+              onPointerDown={handleHabitatTap}
+            >
+              <div className="day-night-glow" aria-hidden="true" />
+              <AmbientParticles />
               <div className="pixel-grid" aria-hidden="true" />
               <div className="ground-line" aria-hidden="true" />
+              {groundTapFx && (
+                <span
+                  key={groundTapFx.tick}
+                  className="ground-spark"
+                  style={{ left: `${groundTapFx.x}%` }}
+                  aria-hidden="true"
+                >
+                  ✦
+                </span>
+              )}
               <div className="decor decor-plant" aria-hidden="true">✿</div>
               <div className="decor decor-sky" aria-hidden="true">
                 {isNight(clockTs) ? '✦ ✦ ✧' : '☁ ☀'}
               </div>
+              <button
+                type="button"
+                className={`parent-lock ${parentHoldActive ? 'holding' : ''}`}
+                aria-label="Open parent mode"
+                onPointerDown={startParentGateHold}
+                onPointerUp={stopParentGateHold}
+                onPointerLeave={stopParentGateHold}
+                onPointerCancel={stopParentGateHold}
+              >
+                <ActionGlyph icon="lock" />
+                <span className="lock-progress-track" aria-hidden="true">
+                  <span style={{ width: `${parentHoldProgress}%` }} />
+                </span>
+              </button>
               {hatchPhase !== 'idle' && (
                 <div className={`hatch-overlay phase-${hatchPhase}`} aria-hidden="true">
                   {(hatchPhase === 'shake' || hatchPhase === 'crack') && (
@@ -857,10 +1078,16 @@ export default function App(): JSX.Element {
               )}
 
               <div
-                className={`critter-zone ${state.asleep ? 'asleep' : ''} ${hatchPhase === 'pop' ? 'hatch-pop' : ''} ${promptSuccessCue ? 'celebrate' : ''}`}
+                className={`critter-zone ${state.asleep ? 'asleep' : ''} ${hatchPhase === 'pop' ? 'hatch-pop' : ''} ${isCelebrating ? 'celebrate' : ''} ${isCurious ? 'curious' : ''} ${isModeling ? `modeling ${modelClass}` : ''}`}
                 style={{ left: `${critterX}%` }}
                 aria-live="polite"
               >
+                {isModeling && (
+                  <div className="critter-speech modeling" role="status" aria-live="polite">
+                    <p className="critter-speech-main">Okay!</p>
+                    <p className="critter-speech-sub">I can listen first.</p>
+                  </div>
+                )}
                 {promptSuccessCue && (
                   <div className="critter-speech" role="status" aria-live="polite">
                     <p className="critter-speech-main">
@@ -872,15 +1099,19 @@ export default function App(): JSX.Element {
                     <p className="critter-speech-sub">You did it!</p>
                   </div>
                 )}
+                {isCelebrating && <SparkleBurst large={starRowBurst} />}
                 {state.stage === 'egg' ? (
                   <EggSprite eggStyle={state.eggStyle ?? 'speckled'} size="large" />
                 ) : (
-                  <div className={critterFacing === 'left' ? 'critter-face-left' : ''}>
+                  <div
+                    className={`${critterFacing === 'left' ? 'critter-face-left' : ''} ${isModeling ? 'critter-listening' : ''}`}
+                  >
                     <CritterSprite
                       variant={state.critterVariant}
                       stage={state.stage}
                       asleep={state.asleep}
                       sickness={state.sickness}
+                      mood={critterMood}
                     />
                   </div>
                 )}
@@ -893,6 +1124,23 @@ export default function App(): JSX.Element {
               </div>
             </div>
           </div>
+          <div className={`star-meter ${starRowBurst ? 'burst' : ''}`}>
+            <p className="star-meter-label">Stars</p>
+            <div className="star-row" aria-label={`${starsFilled} of 5 stars`}>
+              {Array.from({ length: 5 }).map((_, index) => (
+                <span
+                  key={`star-${index}`}
+                  className={`star-slot ${index < starsFilled ? 'filled' : ''}`}
+                  aria-hidden="true"
+                >
+                  ★
+                </span>
+              ))}
+            </div>
+            <p className="star-meter-count">
+              {starRowBurst ? 'Yay!' : `Today: ${state.successfulMirrorsToday} listens`}
+            </p>
+          </div>
         </section>
       </main>
 
@@ -901,20 +1149,26 @@ export default function App(): JSX.Element {
           label="Feed"
           icon="meal"
           active={showFeedSheet}
+          disabled={actionFlowBusy}
           onClick={() => handleDockAction('feed')}
         />
-        <DockButton label="Play" icon="play" onClick={() => handleDockAction('play')} />
-        <DockButton label="Learn" icon="learn" onClick={() => handleDockAction('learn')} />
+        <DockButton
+          label="Play"
+          icon="play"
+          disabled={actionFlowBusy}
+          onClick={() => handleDockAction('play')}
+        />
+        <DockButton
+          label="Learn"
+          icon="learn"
+          disabled={actionFlowBusy}
+          onClick={() => handleDockAction('learn')}
+        />
         <DockButton
           label={state.asleep ? 'Wake' : 'Sleep'}
           icon="sleep"
+          disabled={actionFlowBusy}
           onClick={() => handleDockAction('sleep')}
-        />
-        <DockButton
-          label="Status"
-          icon="status"
-          active={showStatusSheet}
-          onClick={() => handleDockAction('status')}
         />
       </nav>
 
@@ -1006,7 +1260,12 @@ export default function App(): JSX.Element {
         </div>
       </Modal>
 
-      <Modal open={Boolean(pendingIntent)} title="Mirror Prompt" onClose={cancelMirror}>
+      <Modal
+        open={isMirrorPhase}
+        title="Mirror Prompt"
+        onClose={cancelMirror}
+        className="mirror-modal"
+      >
         <div className="mirror-body">
           <div className="mirror-icon">
             <MirrorCueArt icon={mirrorPrompt.promptIcon} />
@@ -1023,6 +1282,7 @@ export default function App(): JSX.Element {
               seconds={state.settings.timerSeconds}
               onConfirm={resolveMirrorDone}
               label="Done"
+              onReadyChange={(ready) => setTimerWaiting(!ready)}
             />
           )}
           <button type="button" className="secondary-btn" onClick={cancelMirror}>
@@ -1107,7 +1367,7 @@ export default function App(): JSX.Element {
           </label>
 
           <label className="switch-row">
-            <span>Hatch Sound</span>
+            <span>Sound Effects</span>
             <input
               type="checkbox"
               checked={settingsDraft.hatchSoundEnabled}
@@ -1183,6 +1443,12 @@ export default function App(): JSX.Element {
               />
             </label>
           )}
+
+          <div className="listening-summary">
+            <p>Great listening today: {state.successfulMirrorsToday} times</p>
+            <p>Best day record: {state.bestDayRecord} times</p>
+            <p>Total stars earned: {state.totalStars}</p>
+          </div>
 
           <div className="field-row">
             <label className="field-label">
@@ -1353,9 +1619,10 @@ interface TimerConfirmProps {
   seconds: number;
   label: string;
   onConfirm: () => void;
+  onReadyChange?: (ready: boolean) => void;
 }
 
-function TimerConfirm({ seconds, label, onConfirm }: TimerConfirmProps): JSX.Element {
+function TimerConfirm({ seconds, label, onConfirm, onReadyChange }: TimerConfirmProps): JSX.Element {
   const [remaining, setRemaining] = useState(seconds);
 
   useEffect(() => {
@@ -1371,6 +1638,10 @@ function TimerConfirm({ seconds, label, onConfirm }: TimerConfirmProps): JSX.Ele
 
   const ready = remaining <= 0;
 
+  useEffect(() => {
+    onReadyChange?.(ready);
+  }, [ready, onReadyChange]);
+
   return (
     <button type="button" className="primary-btn" disabled={!ready} onClick={onConfirm}>
       {ready ? label : `Wait ${remaining}s`}
@@ -1383,11 +1654,17 @@ interface DockButtonProps {
   icon: DockIcon;
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
 }
 
-function DockButton({ label, icon, onClick, active = false }: DockButtonProps): JSX.Element {
+function DockButton({ label, icon, onClick, active = false, disabled = false }: DockButtonProps): JSX.Element {
   return (
-    <button type="button" className={`dock-btn ${active ? 'active' : ''}`} onClick={onClick}>
+    <button
+      type="button"
+      className={`dock-btn ${active ? 'active' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
       <ActionGlyph icon={icon} />
       <span>{label}</span>
     </button>
@@ -1428,11 +1705,50 @@ function ActionGlyph({ icon, large = false }: ActionGlyphProps): JSX.Element {
     play: '⚽',
     learn: '📘',
     sleep: '🛌',
-    status: '📊',
     lock: '🔒'
   };
 
   return <span className={`action-glyph ${large ? 'large' : ''}`}>{symbols[icon]}</span>;
+}
+
+interface SparkleBurstProps {
+  large?: boolean;
+}
+
+function SparkleBurst({ large = false }: SparkleBurstProps): JSX.Element {
+  const positions = [
+    'sparkle-a',
+    'sparkle-b',
+    'sparkle-c',
+    'sparkle-d',
+    'sparkle-e',
+    'sparkle-f'
+  ];
+
+  return (
+    <div className={`sparkle-burst ${large ? 'large' : ''}`} aria-hidden="true">
+      {positions.map((sparkle) => (
+        <span key={sparkle} className={`sparkle ${sparkle}`}>
+          ✦
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function AmbientParticles(): JSX.Element {
+  return (
+    <div className="ambient-particles" aria-hidden="true">
+      <span className="ambient-particle particle-1" />
+      <span className="ambient-particle particle-2" />
+      <span className="ambient-particle particle-3" />
+      <span className="ambient-particle particle-4" />
+      <span className="ambient-particle particle-5" />
+      <span className="ambient-particle particle-6" />
+      <span className="ambient-particle particle-7" />
+      <span className="ambient-particle particle-8" />
+    </div>
+  );
 }
 
 interface MirrorCueArtProps {
@@ -1615,9 +1931,10 @@ interface CritterSpriteProps {
   stage: GameState['stage'];
   asleep: boolean;
   sickness: boolean;
+  mood: CritterMood;
 }
 
-function CritterSprite({ variant, stage, asleep, sickness }: CritterSpriteProps): JSX.Element {
+function CritterSprite({ variant, stage, asleep, sickness, mood }: CritterSpriteProps): JSX.Element {
   const paletteByVariant: Record<CritterVariant, { body: string; accent: string; shadow: string }> = {
     sunny: { body: '#f0b84c', accent: '#f8e98f', shadow: '#cd8d2f' },
     stripe: { body: '#5fa0de', accent: '#e9f2ff', shadow: '#2f73af' },
@@ -1639,7 +1956,7 @@ function CritterSprite({ variant, stage, asleep, sickness }: CritterSpriteProps)
 
   return (
     <svg
-      className={`critter-sprite ${stageClass}`}
+      className={`critter-sprite ${stageClass} mood-${mood}`}
       viewBox="0 0 24 24"
       role="img"
       aria-label="critter"
@@ -1672,10 +1989,44 @@ function CritterSprite({ variant, stage, asleep, sickness }: CritterSpriteProps)
 
       {activeVariant === 'sunny' && <rect x="10" y="3" width="4" height="2" fill="#f8e98f" />}
 
-      {!asleep && !sickness && (
+      {!asleep && !sickness && mood === 'celebrating' && (
         <>
-          <rect x="9" y="12" width="2" height="2" fill="#222" />
-          <rect x="13" y="12" width="2" height="2" fill="#222" />
+          <g className="critter-eyes">
+            <rect x="8" y="11" width="3" height="2" fill="#222" />
+            <rect x="13" y="11" width="3" height="2" fill="#222" />
+          </g>
+          <rect x="10" y="15" width="4" height="1" fill="#222" />
+          <rect x="9" y="16" width="6" height="1" fill="#222" />
+        </>
+      )}
+
+      {!asleep && !sickness && mood === 'modeling' && (
+        <>
+          <g className="critter-eyes">
+            <rect x="9" y="11" width="2" height="3" fill="#222" />
+            <rect x="13" y="11" width="2" height="3" fill="#222" />
+          </g>
+          <rect x="10" y="15" width="4" height="1" fill="#222" />
+        </>
+      )}
+
+      {!asleep && !sickness && mood === 'curious' && (
+        <>
+          <g className="critter-eyes">
+            <rect x="8" y="11" width="3" height="1" fill="#222" />
+            <rect x="13" y="12" width="3" height="1" fill="#222" />
+          </g>
+          <rect x="10" y="15" width="4" height="1" fill="#222" />
+          <rect x="12" y="16" width="2" height="1" fill="#222" />
+        </>
+      )}
+
+      {!asleep && !sickness && mood === 'neutral' && (
+        <>
+          <g className="critter-eyes">
+            <rect x="9" y="12" width="2" height="2" fill="#222" />
+            <rect x="13" y="12" width="2" height="2" fill="#222" />
+          </g>
           <rect x="11" y="15" width="2" height="1" fill="#222" />
         </>
       )}

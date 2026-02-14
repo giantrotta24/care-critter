@@ -6,6 +6,7 @@ export type PromptIconKey = 'meal' | 'snack' | 'play' | 'learn' | 'sleep';
 export type MirrorActionKey = 'feedMeal' | 'feedSnack' | 'play' | 'learn' | 'sleep';
 export type ConfirmMode = 'parent' | 'timer';
 export type AttentionReason = 'bored' | 'random' | null;
+export type CurrentPhase = 'idle' | 'modeling' | 'mirror' | 'celebrating';
 
 export interface AttentionDemand {
   active: boolean;
@@ -53,6 +54,11 @@ export interface GameState {
   poopCount: number;
   snackCountToday: number;
   lastSnackResetDate: string;
+  starsToday: number;
+  totalStars: number;
+  successfulMirrorsToday: number;
+  bestDayRecord: number;
+  currentPhase: CurrentPhase;
   lastUpdateTs: number;
   careScoreHistory: CareScoreSnapshot[];
   adultVariant: AdultVariant;

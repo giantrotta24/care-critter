@@ -114,6 +114,8 @@ function withDailyResets(state: GameState, nowTs: number): GameState {
   return {
     ...state,
     snackCountToday: 0,
+    starsToday: 0,
+    successfulMirrorsToday: 0,
     lastSnackResetDate: today
   };
 }
@@ -146,6 +148,11 @@ export function createInitialState(
     poopCount: 0,
     snackCountToday: 0,
     lastSnackResetDate: baseDate,
+    starsToday: 0,
+    totalStars: 0,
+    successfulMirrorsToday: 0,
+    bestDayRecord: 0,
+    currentPhase: 'idle',
     lastUpdateTs: nowTs,
     careScoreHistory: [{ ts: nowTs, score: 56.67 }],
     adultVariant: 'C',
